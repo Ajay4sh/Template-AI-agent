@@ -647,6 +647,8 @@ const state = {
   docxArrayBuffer: null,// Raw DOCX bytes for docx-preview rendering (DOCX only)
   pdfPages: [],         // [{imageBase64, mediaType}] — one entry per PDF page for AI vision detection
   injectedHtml: '',     // HTML after field injection
+  docxVisualHtml: '',   // Serialized docx-preview DOM (captured after rendering — used as visual export base)
+  docxPreviewStyles: '',// <style> tags injected by docx-preview library (captured after rendering)
   proposedFields: [],
   lastDetectionMode: '',
   fieldValues: {},
@@ -894,6 +896,10 @@ async function showDocxPreview(arrayBuffer) {
     wrap.innerHTML = '';
     // renderAsync needs a fresh copy of the buffer (it reads it as a stream)
     const bufCopy = arrayBuffer.slice(0);
+
+    // Snapshot existing <style> elements before rendering so we can capture only docx-preview's new ones
+    const stylesBefore = new Set(document.head.querySelectorAll('style'));
+
     await docxLib.renderAsync(bufCopy, wrap, null, {
       className: 'docx-preview',
       inWrapper: true,
@@ -904,6 +910,11 @@ async function showDocxPreview(arrayBuffer) {
       renderFooters: true,
       renderFootnotes: true,
     });
+
+    // Capture docx-preview's injected styles and rendered DOM for visual export
+    const newStyleEls = [...document.head.querySelectorAll('style')].filter(s => !stylesBefore.has(s));
+    state.docxPreviewStyles = newStyleEls.map(s => `<style>${s.textContent}</style>`).join('\n');
+    state.docxVisualHtml = wrap.innerHTML;
 
     // Auto-fit to pane width after rendering
     setTimeout(docxZoomFit, 100);
@@ -2199,7 +2210,10 @@ function injectApproved() {
     return;
   }
 
-  const { html, results } = InjectionEngine.injectAll(state.rawHtml, toInject);
+  // For DOCX: inject into the docx-preview visual DOM (pixel-perfect layout) when available.
+  // Fall back to mammoth HTML for PDFs or if visual DOM wasn't captured.
+  const injectSource = (state.docxArrayBuffer && state.docxVisualHtml) ? state.docxVisualHtml : state.rawHtml;
+  const { html, results } = InjectionEngine.injectAll(injectSource, toInject);
   state.injectedHtml = html;
 
   // Show failures
@@ -2230,7 +2244,19 @@ function injectApproved() {
   }
 
   const ok = results.filter(r => r.success).length;
-  loadIframe(state.injectedHtml);
+
+  // For DOCX: update docx-preview container with injected form (preserves visual fidelity in preview too)
+  if (state.docxArrayBuffer && state.docxVisualHtml) {
+    const wrap = document.getElementById('docx-pages-wrap');
+    if (wrap) wrap.innerHTML = state.injectedHtml;
+    document.getElementById('doc-frame').style.display = 'none';
+    const cont = document.getElementById('docx-preview-container');
+    if (cont) { cont.style.display = 'flex'; cont.style.flexDirection = 'column'; }
+    setTimeout(docxZoomFit, 100);
+  } else {
+    loadIframe(state.injectedHtml);
+  }
+
   toast(`Injected ${ok} field${ok !== 1 ? 's' : ''}${failed.length ? `, ${failed.length} failed` : ''}.`,
     failed.length ? 'warning' : 'success');
   document.getElementById('btn-export').disabled = false;
@@ -2520,13 +2546,42 @@ const InjectionEngine = {
 // ════════════════════════════════════════════════════════════════
 // EXPORT
 // ════════════════════════════════════════════════════════════════
+
+// Minimal leegality field styles for DOCX visual exports (used instead of full IFRAME_STYLE)
+const LEEGALITY_FIELD_CSS = `<style>
+  * { box-sizing: border-box; }
+  input.leegality-textbox, select.leegality-select {
+    border: none; border-bottom: 1.5px solid #2563eb; border-radius: 0;
+    padding: 1px 4px; font-family: inherit; font-size: inherit;
+    background: transparent; min-width: 80px; outline: none; color: #1a1a1a;
+    transition: border-color .15s; vertical-align: baseline;
+  }
+  input.leegality-textbox:focus, select.leegality-select:focus {
+    border-bottom-color: #1d4ed8; background: #eff6ff;
+  }
+  input.leegality-checkbox, input.leegality-radio {
+    accent-color: #2563eb; width: 14px; height: 14px; cursor: pointer;
+  }
+  label { font-size: inherit; cursor: pointer; }
+  /* DOCX page display */
+  body { margin: 0; padding: 20px; background: #525659; }
+  section.docx-preview { background: white; box-shadow: 0 2px 8px rgba(0,0,0,.4); margin: 0 auto 20px; }
+</style>`;
+
 function exportHtml() {
   closeExportMenu();
   const source = state.injectedHtml || state.rawHtml;
   if (!source) { toast('No document loaded.', 'error'); return; }
 
   const filled = inlineFieldValues(source, state.fieldValues);
-  const full   = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n${IFRAME_STYLE}\n</head>\n<body>\n${filled}\n</body>\n</html>`;
+
+  // DOCX: docxVisualHtml already contains docx-preview's <style> tag inline — use leegality styles only.
+  // PDF/template: use full IFRAME_STYLE (mammoth-based layout needs all those rules).
+  const headStyles = (state.docxArrayBuffer && state.docxVisualHtml)
+    ? LEEGALITY_FIELD_CSS
+    : IFRAME_STYLE;
+
+  const full   = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n${headStyles}\n</head>\n<body>\n${filled}\n</body>\n</html>`;
 
   downloadBlob(full, 'text/html', state.fileName.replace(/\.[^.]+$/, '_filled.html'));
   toast('HTML exported with injected fields.', 'success');
@@ -2742,7 +2797,7 @@ function resetToUpload() {
   document.getElementById('btn-export').disabled = true;
   document.getElementById('failed-banner').style.display = 'none';
   document.getElementById('filename-chip').textContent = 'No file';
-  Object.assign(state, { fileName: '', rawHtml: '', previewHtml: '', docxArrayBuffer: null, pdfPages: [], injectedHtml: '', proposedFields: [], fieldValues: {}, reviewStates: [] });
+  Object.assign(state, { fileName: '', rawHtml: '', previewHtml: '', docxArrayBuffer: null, pdfPages: [], injectedHtml: '', docxVisualHtml: '', docxPreviewStyles: '', proposedFields: [], fieldValues: {}, reviewStates: [] });
   const docxContainer = document.getElementById('docx-preview-container');
   if (docxContainer) { docxContainer.style.display = 'none'; docxContainer.innerHTML = ''; }
   fileInput.value = '';
