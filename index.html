@@ -6,6 +6,8 @@
 <title>Leegality Field Injector</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx-preview@0.3.2/dist/docx-preview.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -113,6 +115,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 /* ── DOCUMENT VIEWER ── */
 #doc-viewer { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); position: relative; }
 #doc-frame { flex: 1; border: none; background: white; }
+#docx-preview-container {
+  flex: 1; overflow: auto; background: #525659; display: none; padding: 16px;
+}
+#docx-preview-container .docx-wrapper {
+  background: transparent;
+  display: flex; flex-direction: column; align-items: center;
+}
+#docx-preview-container .docx-wrapper section.docx {
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  margin-bottom: 16px;
+  background: white;
+}
 
 #failed-banner {
   display: none; background: #fef3c7; border-top: 2px solid var(--warning); padding: 10px 16px;
@@ -444,6 +458,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <!-- DOCUMENT VIEWER -->
     <div id="doc-viewer">
       <iframe id="doc-frame" title="Document preview"></iframe>
+      <div id="docx-preview-container"></div>
 
       <!-- Failed injection banner -->
       <div id="failed-banner">
@@ -602,6 +617,7 @@ const state = {
   fileName: '',
   rawHtml: '',          // Injection-target HTML (table-based for PDFs, mammoth for DOCX)
   previewHtml: '',      // Canvas-image HTML for PDF visual preview (empty for DOCX)
+  docxArrayBuffer: null,// Raw DOCX bytes for docx-preview rendering (DOCX only)
   pdfPages: [],         // [{imageBase64, mediaType}] — one entry per PDF page for AI vision detection
   injectedHtml: '',     // HTML after field injection
   proposedFields: [],
@@ -646,7 +662,9 @@ async function handleFile(file) {
     const ext = file.name.split('.').pop().toLowerCase();
 
     if (ext === 'docx') {
-      state.rawHtml = await convertDocx(file);
+      const ab = await file.arrayBuffer();
+      state.docxArrayBuffer = ab;
+      state.rawHtml = await convertDocxFromBuffer(ab);
       state.previewHtml = '';
     } else if (ext === 'pdf') {
       showOverlay('Rendering pages…');
@@ -661,8 +679,8 @@ async function handleFile(file) {
     }
 
     // Check if already a Leegality template (has leegality-* inputs).
-    // Exclude fresh PDF conversions — they never have pre-injected fields.
-    if (!state.previewHtml && /leegality-textbox|leegality-checkbox|leegality-radio|leegality-select/.test(state.rawHtml)) {
+    // Exclude fresh PDF/DOCX conversions — they never have pre-injected fields.
+    if (!state.previewHtml && !state.docxArrayBuffer && /leegality-textbox|leegality-checkbox|leegality-radio|leegality-select/.test(state.rawHtml)) {
       state.injectedHtml = state.rawHtml;
       loadIframe(state.injectedHtml);
       hideOverlay();
@@ -671,10 +689,15 @@ async function handleFile(file) {
     } else {
       hideOverlay();
       // Show preview and enable Next button — user chooses detection mode next
-      if (state.previewHtml) loadIframe(state.previewHtml);
-      else loadIframe(state.rawHtml);
+      if (state.docxArrayBuffer) {
+        await showDocxPreview(state.docxArrayBuffer);
+      } else if (state.previewHtml) {
+        loadIframe(state.previewHtml);
+      } else {
+        loadIframe(state.rawHtml);
+      }
       document.getElementById('btn-detect').disabled = false;
-      toast('Document converted — click "Next" to choose detection mode.');
+      toast('Document loaded — click "Next →" to detect fields.');
     }
   } catch (err) {
     hideOverlay();
@@ -705,9 +728,8 @@ async function convertPdfFromBuffer(pdfBuffer) {
   return html + '</div>';
 }
 
-async function convertDocx(file) {
-  // Always use mammoth for DOCX — produces real HTML for inline field injection
-  const ab = await file.arrayBuffer();
+async function convertDocxFromBuffer(ab) {
+  // Use mammoth to extract structured HTML for field detection + injection
   const result = await mammoth.convertToHtml({ arrayBuffer: ab }, {
     styleMap: [
       // ── Headings ──────────────────────────────────────────────
@@ -762,6 +784,38 @@ async function convertDocx(file) {
   // Post-process: restore table borders, cell structure, blank underline → underscores
   html = restoreDocxFormatting(html);
   return html;
+}
+
+// Render DOCX visually using docx-preview (pixel-perfect layout, like Word)
+async function showDocxPreview(arrayBuffer) {
+  const frame = document.getElementById('doc-frame');
+  const container = document.getElementById('docx-preview-container');
+  frame.style.display = 'none';
+  container.style.display = 'flex';
+  container.innerHTML = '<div style="margin:auto;padding:20px;color:#666;font-size:14px;">Rendering document…</div>';
+
+  try {
+    const docxLib = window.docx;
+    if (!docxLib || !docxLib.renderAsync) throw new Error('docx-preview library not loaded');
+
+    // renderAsync needs a fresh copy of the buffer (it reads it as a stream)
+    const bufCopy = arrayBuffer.slice(0);
+    await docxLib.renderAsync(bufCopy, container, null, {
+      className: 'docx-preview',
+      inWrapper: true,
+      ignoreWidth: false,
+      ignoreHeight: false,
+      breakPages: true,
+      renderHeaders: true,
+      renderFooters: true,
+      renderFootnotes: true,
+    });
+  } catch (e) {
+    console.warn('docx-preview failed, falling back to mammoth HTML:', e);
+    container.style.display = 'none';
+    frame.style.display = '';
+    loadIframe(state.rawHtml);
+  }
 }
 
 // Wrap any truly bare <li> elements (not already inside <ol>/<ul>) in <ul> as fallback.
@@ -1329,7 +1383,11 @@ const IFRAME_STYLE = `
 
 
 function loadIframe(html) {
+  // Switch from docx-preview container back to iframe view
+  const docxContainer = document.getElementById('docx-preview-container');
+  if (docxContainer) docxContainer.style.display = 'none';
   const frame = document.getElementById('doc-frame');
+  frame.style.display = '';
   const full  = `<!DOCTYPE html><html><head><meta charset="UTF-8">${IFRAME_STYLE}</head><body>${html}</body></html>`;
 
   // Remove previous load handler to avoid double-firing
@@ -2587,7 +2645,9 @@ function resetToUpload() {
   document.getElementById('btn-export').disabled = true;
   document.getElementById('failed-banner').style.display = 'none';
   document.getElementById('filename-chip').textContent = 'No file';
-  Object.assign(state, { fileName: '', rawHtml: '', previewHtml: '', pdfPages: [], injectedHtml: '', proposedFields: [], fieldValues: {}, reviewStates: [] });
+  Object.assign(state, { fileName: '', rawHtml: '', previewHtml: '', docxArrayBuffer: null, pdfPages: [], injectedHtml: '', proposedFields: [], fieldValues: {}, reviewStates: [] });
+  const docxContainer = document.getElementById('docx-preview-container');
+  if (docxContainer) { docxContainer.style.display = 'none'; docxContainer.innerHTML = ''; }
   fileInput.value = '';
 }
 function showOverlay(msg) {
@@ -2840,10 +2900,14 @@ async function runDetectionFromModal() {
   }
 }
 
-function closePageSelector() {
+async function closePageSelector() {
   pageSelector.close();
-  // For PDFs restore the canvas preview; for DOCX rawHtml is the display
-  loadIframe(state.previewHtml || state.rawHtml);
+  // Restore the appropriate preview based on file type
+  if (state.docxArrayBuffer) {
+    await showDocxPreview(state.docxArrayBuffer);
+  } else {
+    loadIframe(state.previewHtml || state.rawHtml);
+  }
   document.getElementById('btn-detect').disabled = false;
 }
 function psSelectAll() { pageSelector.selectAll(); }
