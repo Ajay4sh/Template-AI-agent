@@ -682,7 +682,23 @@ fileInput.addEventListener('change', () => {
 });
 
 async function handleFile(file) {
-  state.fileName = file.name;
+  // Reset all visual and data state before loading a new file
+  Object.assign(state, {
+    fileName: file.name,
+    rawHtml: '', previewHtml: '', docxArrayBuffer: null, pdfPages: [],
+    injectedHtml: '', docxVisualHtml: '', docxPreviewStyles: '',
+    proposedFields: [], fieldValues: {}, reviewStates: [],
+  });
+  // Hide docx-preview container and clear its content (but preserve DOM structure)
+  const _docxCont = document.getElementById('docx-preview-container');
+  if (_docxCont) _docxCont.style.display = 'none';
+  const _wrap = document.getElementById('docx-pages-wrap');
+  if (_wrap) _wrap.innerHTML = '';
+  document.getElementById('doc-frame').srcdoc = '';
+  document.getElementById('failed-banner').style.display = 'none';
+  document.getElementById('btn-detect').disabled = true;
+  document.getElementById('btn-export').disabled = true;
+
   showApp();
   document.getElementById('filename-chip').textContent = file.name;
   showOverlay('Converting document…');
@@ -883,7 +899,16 @@ function _applyDocxZoom() {
 async function showDocxPreview(arrayBuffer) {
   const frame = document.getElementById('doc-frame');
   const container = document.getElementById('docx-preview-container');
-  const wrap = document.getElementById('docx-pages-wrap');
+  let wrap = document.getElementById('docx-pages-wrap');
+
+  // Self-heal: if wrap was removed (e.g. old reset bug or DOM manipulation), recreate it
+  if (!wrap && container) {
+    wrap = document.createElement('div');
+    wrap.id = 'docx-pages-wrap';
+    container.appendChild(wrap);
+  }
+  if (!wrap) { console.error('docx-pages-wrap missing and container unavailable'); loadIframe(state.rawHtml); return; }
+
   frame.style.display = 'none';
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
