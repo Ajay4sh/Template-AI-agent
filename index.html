@@ -1,0 +1,2891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leegality Field Injector</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --toolbar: #0f172a;
+  --panel: #1e293b;
+  --panel-text: #e2e8f0;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --success: #16a34a;
+  --warning: #d97706;
+  --error: #dc2626;
+  --radius: 6px;
+  --shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+}
+
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── UPLOAD SCREEN ── */
+#upload-screen {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 32px; padding: 40px;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-icon { width: 48px; height: 48px; background: var(--primary); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+.brand-icon svg { fill: white; }
+.brand-name { font-size: 22px; font-weight: 700; color: var(--text); }
+.brand-name span { color: var(--primary); }
+
+.upload-zone {
+  width: 100%; max-width: 560px; border: 2px dashed var(--border); border-radius: 16px;
+  background: var(--surface); padding: 56px 40px; text-align: center; cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.upload-zone:hover, .upload-zone.drag-over { border-color: var(--primary); background: #eff6ff; }
+.upload-zone .upload-icon { font-size: 48px; margin-bottom: 16px; }
+.upload-zone h2 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.upload-zone p { color: var(--text-muted); font-size: 14px; margin-bottom: 20px; }
+.upload-zone .formats { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.format-badge { background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+#file-input { display: none; }
+.btn-upload { background: var(--primary); color: white; border: none; border-radius: var(--radius); padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 20px; transition: background .2s; }
+.btn-upload:hover { background: var(--primary-dark); }
+
+/* ── APP SHELL ── */
+#app { flex: 1; display: flex; flex-direction: column; overflow: hidden; display: none; }
+
+/* ── AI TOGGLE ── */
+.ai-toggle-wrap { display: flex; align-items: center; gap: 7px; margin-right: 4px; }
+.ai-toggle-label { font-size: 11px; color: #94a3b8; white-space: nowrap; }
+.ai-toggle {
+  position: relative; display: inline-block; width: 38px; height: 20px; cursor: pointer;
+}
+.ai-toggle input { opacity: 0; width: 0; height: 0; }
+.ai-toggle-slider {
+  position: absolute; inset: 0; border-radius: 20px; background: #334155;
+  transition: background .2s;
+}
+.ai-toggle-slider::before {
+  content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px;
+  border-radius: 50%; background: white; transition: transform .2s;
+}
+.ai-toggle input:checked + .ai-toggle-slider { background: #2563eb; }
+.ai-toggle input:checked + .ai-toggle-slider::before { transform: translateX(18px); }
+#ai-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; display: inline-block; }
+#ai-status-dot.ok  { background: #22c55e; }
+#ai-status-dot.bad { background: #ef4444; }
+
+/* ── TOOLBAR ── */
+#toolbar {
+  height: 52px; background: var(--toolbar); display: flex; align-items: center;
+  padding: 0 16px; gap: 12px; flex-shrink: 0; border-bottom: 1px solid #1e293b;
+}
+.toolbar-brand { display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; font-size: 15px; text-decoration: none; }
+.toolbar-brand .dot { color: #60a5fa; }
+#filename-chip { background: #1e3a5f; color: #93c5fd; border-radius: 20px; padding: 3px 12px; font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolbar-spacer { flex: 1; }
+.toolbar-btn {
+  background: #1e3a5f; color: #e2e8f0; border: 1px solid #2d4a6d; border-radius: var(--radius);
+  padding: 6px 14px; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  transition: background .15s;
+}
+.toolbar-btn:hover { background: #264d80; }
+.toolbar-btn:disabled { opacity: .4; cursor: not-allowed; }
+.toolbar-btn.primary { background: var(--primary); border-color: var(--primary-dark); color: white; }
+.toolbar-btn.primary:hover { background: var(--primary-dark); }
+
+.export-wrap { position: relative; }
+.export-menu {
+  display: none; position: absolute; top: calc(100% + 6px); right: 0; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  min-width: 160px; z-index: 100; overflow: hidden;
+}
+.export-menu.open { display: block; }
+.export-menu button { display: block; width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; cursor: pointer; color: var(--text); }
+.export-menu button:hover { background: var(--bg); }
+.export-sep { height: 1px; background: var(--border); }
+
+/* ── MAIN CONTENT ── */
+#main { flex: 1; display: flex; overflow: hidden; }
+
+/* ── DOCUMENT VIEWER ── */
+#doc-viewer { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); position: relative; }
+#doc-frame { flex: 1; border: none; background: white; }
+
+#failed-banner {
+  display: none; background: #fef3c7; border-top: 2px solid var(--warning); padding: 10px 16px;
+  font-size: 13px; color: #92400e; flex-shrink: 0;
+}
+#failed-banner strong { font-weight: 600; }
+#failed-banner .failed-list { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.failed-item { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; }
+.failed-item .fi-name { font-weight: 600; min-width: 120px; }
+.failed-item .fi-err { color: #b45309; }
+
+#detect-overlay {
+  display: none; position: absolute; inset: 0; background: rgba(255,255,255,.85);
+  align-items: center; justify-content: center; flex-direction: column; gap: 16px; z-index: 50;
+}
+#detect-overlay.visible { display: flex; }
+.spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.detect-msg { font-size: 14px; color: var(--text-muted); font-weight: 500; }
+
+/* ── FIELD PANEL ── */
+#field-panel {
+  width: 300px; background: var(--panel); display: flex; flex-direction: column;
+  border-left: 1px solid #0f172a; flex-shrink: 0; overflow: hidden;
+}
+#panel-header {
+  padding: 14px 16px; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between;
+}
+#panel-header h3 { color: var(--panel-text); font-size: 14px; font-weight: 600; }
+#panel-count { background: #334155; color: #94a3b8; border-radius: 20px; padding: 2px 8px; font-size: 11px; }
+#fields-list { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+#fields-list::-webkit-scrollbar { width: 4px; }
+#fields-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+.field-card { background: #0f172a; border: 1px solid #334155; border-radius: var(--radius); padding: 10px 12px; }
+.field-card-label { color: #94a3b8; font-size: 11px; font-weight: 500; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-input {
+  width: 100%; background: #1e293b; border: 1px solid #334155; border-radius: 4px;
+  color: var(--panel-text); font-size: 13px; padding: 6px 8px; outline: none;
+  transition: border-color .15s;
+}
+.panel-input:focus { border-color: #60a5fa; }
+.panel-input::placeholder { color: #475569; }
+
+.no-fields { color: #64748b; font-size: 13px; text-align: center; padding: 40px 16px; line-height: 1.6; }
+
+/* ── REVIEW MODAL ── */
+#review-modal {
+  display: none; position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5);
+  align-items: center; justify-content: center; padding: 20px;
+}
+#review-modal.open { display: flex; }
+.modal-card {
+  background: var(--surface); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  width: 100%; max-width: 780px; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head {
+  padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0;
+}
+.modal-head h2 { font-size: 17px; font-weight: 700; }
+.modal-head p { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.modal-close { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 20px; padding: 2px 6px; border-radius: 4px; }
+.modal-close:hover { background: var(--bg); }
+.modal-body { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.modal-foot {
+  padding: 14px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; background: var(--bg);
+}
+.modal-foot .count-info { flex: 1; font-size: 13px; color: var(--text-muted); }
+.btn { padding: 8px 18px; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: .15s; }
+.btn-ghost { background: none; border-color: var(--border); color: var(--text); }
+.btn-ghost:hover { background: var(--bg); }
+.btn-success { background: var(--success); color: white; }
+.btn-success:hover { background: #15803d; }
+.btn-primary { background: var(--primary); color: white; }
+.btn-primary:hover { background: var(--primary-dark); }
+
+/* Review field card */
+.review-card {
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px;
+  display: flex; gap: 12px; align-items: flex-start; transition: border-color .15s, background .15s;
+}
+.review-card.approved { border-color: #86efac; background: #f0fdf4; }
+.review-card.rejected { border-color: #fca5a5; background: #fff1f2; opacity: .65; }
+.review-card .rc-left { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.rc-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.type-badge {
+  font-size: 10px; font-weight: 700; border-radius: 3px; padding: 2px 7px; text-transform: uppercase; letter-spacing: .05em;
+}
+.type-textbox  { background: #dbeafe; color: #1d4ed8; }
+.type-email    { background: #fce7f3; color: #9d174d; }
+.type-tel      { background: #d1fae5; color: #065f46; }
+.type-date     { background: #ede9fe; color: #5b21b6; }
+.type-number   { background: #fef3c7; color: #92400e; }
+.type-checkbox { background: #fee2e2; color: #991b1b; }
+.type-radio    { background: #ffedd5; color: #9a3412; }
+.type-image    { background: #f0fdf4; color: #14532d; }
+
+.rc-name-input {
+  border: none; border-bottom: 1px solid var(--border); background: none; font-size: 14px;
+  font-weight: 600; color: var(--text); width: 100%; padding: 1px 0; outline: none;
+}
+.rc-name-input:focus { border-bottom-color: var(--primary); }
+.rc-context { font-size: 12px; color: var(--text-muted); }
+.rc-position { font-size: 11px; color: #94a3b8; font-family: monospace; background: var(--bg); border-radius: 3px; padding: 2px 6px; display: inline-block; margin-top: 2px; }
+.rc-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.btn-approve, .btn-reject {
+  width: 32px; height: 32px; border-radius: 50%; border: none; cursor: pointer; font-size: 15px;
+  display: flex; align-items: center; justify-content: center; transition: .15s;
+}
+.btn-approve { background: #dcfce7; color: var(--success); }
+.btn-approve:hover { background: #bbf7d0; }
+.btn-approve.active { background: var(--success); color: white; }
+.btn-reject { background: #fee2e2; color: var(--error); }
+.btn-reject:hover { background: #fecaca; }
+.btn-reject.active { background: var(--error); color: white; }
+
+/* ── DETECTION MODE MODAL (full screen) ── */
+#detect-mode-modal {
+  display:none; position:fixed; inset:0; z-index:410; background:#0f172a;
+  flex-direction:column; overflow:hidden;
+}
+#detect-mode-modal.open { display:flex; }
+.dm-header {
+  height:52px; background:#0f172a; border-bottom:1px solid #1e293b;
+  display:flex; align-items:center; gap:16px; padding:0 20px; flex-shrink:0;
+}
+.dm-body {
+  flex:1; display:flex; align-items:center; justify-content:center; gap:28px;
+  padding:32px 24px; overflow:auto;
+}
+.dm-card {
+  flex:0 0 260px; background:#1e293b; border:2px solid #334155;
+  border-radius:16px; padding:32px 24px; cursor:pointer; text-align:center;
+  transition:border-color .15s, transform .12s, box-shadow .15s;
+  display:flex; flex-direction:column; align-items:center; gap:14px;
+}
+.dm-card:hover { border-color:#f97316; transform:translateY(-2px); box-shadow:0 8px 32px rgba(249,115,22,.18); }
+.dm-card.selected { border-color:#f97316; background:#2d1f0e; }
+.dm-card-icon { font-size:42px; }
+.dm-card-title { font-size:17px; font-weight:700; color:#e2e8f0; }
+.dm-card-desc { font-size:13px; color:#94a3b8; line-height:1.5; }
+.dm-card-badge { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px;
+  background:#f97316; color:#fff; }
+.dm-footer {
+  height:64px; background:#0f172a; border-top:1px solid #1e293b;
+  display:flex; align-items:center; justify-content:flex-end; padding:0 24px; flex-shrink:0;
+}
+#dm-detect-btn {
+  background:#f97316; color:#fff; border:none; border-radius:8px; padding:10px 28px;
+  font-size:15px; font-weight:600; cursor:pointer; transition:opacity .15s;
+}
+#dm-detect-btn:hover { opacity:.88; }
+
+/* ── PAGE SELECTOR (full screen) ── */
+#page-selector-modal {
+  display:none; position:fixed; inset:0; z-index:400; background:#0f172a;
+  flex-direction:column; overflow:hidden;
+}
+#page-selector-modal.open { display:flex; }
+.ps-header {
+  height:52px; background:#0f172a; border-bottom:1px solid #1e293b;
+  display:flex; align-items:center; padding:0 20px; gap:16px; flex-shrink:0;
+}
+.ps-back { background:none; border:none; color:#94a3b8; cursor:pointer; font-size:14px; padding:6px 12px; border-radius:6px; }
+.ps-back:hover { background:#1e293b; color:#e2e8f0; }
+.ps-title { font-size:15px; font-weight:600; color:#e2e8f0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ps-counter { font-size:13px; color:#94a3b8; white-space:nowrap; }
+.ps-body { flex:1; display:flex; overflow:hidden; }
+
+/* Sidebar — section list */
+.ps-sidebar {
+  width:210px; background:#1e293b; border-right:1px solid #334155;
+  display:flex; flex-direction:column; overflow:hidden; flex-shrink:0;
+}
+.ps-sidebar-list { flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:4px; }
+.ps-sidebar-list::-webkit-scrollbar { width:4px; }
+.ps-sidebar-list::-webkit-scrollbar-thumb { background:#334155; border-radius:2px; }
+.ps-section-item {
+  border-radius:6px; padding:8px 10px; border:2px solid transparent;
+  cursor:pointer; transition:border-color .15s, background .15s; display:flex; align-items:flex-start; gap:8px;
+}
+.ps-section-item:hover { background:#273549; }
+.ps-section-item.active { border-color:#2563eb; background:#1e3a5f; }
+.ps-section-item input[type="checkbox"] { accent-color:#2563eb; width:14px; height:14px; cursor:pointer; flex-shrink:0; margin-top:2px; }
+.ps-section-label { font-size:12px; color:#94a3b8; font-weight:500; line-height:1.4; }
+.ps-section-item.active .ps-section-label { color:#e2e8f0; }
+
+/* Iframe thumbnail inside section item */
+.ps-thumb-frame-wrap {
+  width:100%; height:80px; overflow:hidden; border-radius:3px; border:1px solid #334155;
+  background:#fff; margin-top:6px; position:relative; pointer-events:none;
+}
+.ps-thumb-frame-wrap iframe {
+  width:820px; height:600px; border:none;
+  transform-origin:top left; pointer-events:none;
+}
+
+.ps-sidebar-actions { padding:8px 10px; border-top:1px solid #334155; display:flex; gap:6px; flex-shrink:0; }
+.ps-sidebar-actions button {
+  flex:1; background:#334155; border:none; color:#94a3b8; border-radius:6px;
+  padding:6px 0; font-size:12px; cursor:pointer; transition:.15s;
+}
+.ps-sidebar-actions button:hover { background:#475569; color:#e2e8f0; }
+
+/* Center — live HTML preview */
+.ps-preview {
+  flex:1; background:#e5e7eb; display:flex; flex-direction:column; overflow:hidden; position:relative;
+}
+#ps-preview-frame {
+  flex:1; border:none; background:#fff;
+}
+.ps-preview-empty {
+  display:none; position:absolute; inset:0; align-items:center; justify-content:center;
+  color:#94a3b8; font-size:14px; background:#0a1020;
+}
+.ps-preview-empty.visible { display:flex; }
+
+/* Right — context panel */
+.ps-context {
+  width:272px; background:#1e293b; border-left:1px solid #334155;
+  display:flex; flex-direction:column; overflow-y:auto; padding:16px 14px; gap:14px; flex-shrink:0;
+}
+.ps-context::-webkit-scrollbar { width:4px; }
+.ps-context::-webkit-scrollbar-thumb { background:#334155; border-radius:2px; }
+.ps-context-heading { font-size:13px; font-weight:700; color:#e2e8f0; }
+.ps-cg { display:flex; flex-direction:column; gap:5px; }
+.ps-cg label { font-size:12px; color:#94a3b8; }
+.ps-cg input, .ps-cg textarea, .ps-cg select {
+  width:100%; background:#0f172a; border:1px solid #334155; border-radius:6px;
+  color:#e2e8f0; font-size:13px; padding:7px 9px; outline:none; font-family:inherit;
+}
+.ps-cg input:focus, .ps-cg textarea:focus, .ps-cg select:focus { border-color:#2563eb; }
+.ps-cg textarea { resize:vertical; min-height:60px; }
+.ps-cg select option { background:#1e293b; }
+.ps-toggle-row { display:flex; align-items:flex-start; gap:10px; }
+.ps-toggle-info { flex:1; display:flex; flex-direction:column; gap:3px; }
+.ps-toggle-info strong { font-size:13px; color:#e2e8f0; font-weight:500; }
+.ps-toggle-info small { font-size:11px; color:#64748b; line-height:1.4; }
+.ps-sw { position:relative; display:inline-block; width:38px; height:20px; flex-shrink:0; margin-top:2px; }
+.ps-sw input { opacity:0; width:0; height:0; }
+.ps-sw-slider { position:absolute; inset:0; border-radius:20px; background:#334155; cursor:pointer; transition:background .2s; }
+.ps-sw-slider::before { content:''; position:absolute; height:14px; width:14px; left:3px; bottom:3px; border-radius:50%; background:#fff; transition:transform .2s; }
+.ps-sw input:checked + .ps-sw-slider { background:#2563eb; }
+.ps-sw input:checked + .ps-sw-slider::before { transform:translateX(18px); }
+#ps-detect-btn {
+  background:#2563eb; color:#fff; border:none; border-radius:8px; padding:12px 14px;
+  font-size:13px; font-weight:600; cursor:pointer; width:100%; margin-top:auto; flex-shrink:0; transition:.15s;
+}
+#ps-detect-btn:hover { background:#1d4ed8; }
+#ps-detect-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+/* ── TOAST ── */
+#toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 999;
+  background: #1e293b; color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px;
+  opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap;
+}
+#toast.show { opacity: 1; }
+#toast.error { background: var(--error); }
+#toast.success { background: var(--success); }
+
+/* ── IFRAME FIELD STYLES (injected into iframe) ── */
+</style>
+</head>
+<body>
+
+<!-- ══════════════ UPLOAD SCREEN ══════════════ -->
+<div id="upload-screen">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg width="28" height="28" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4zm-4 9h6v1H9v-1zm0 2h6v1H9v-1zm0 2h4v1H9v-1z"/></svg>
+    </div>
+    <div class="brand-name">Leegality <span>Field Injector</span></div>
+  </div>
+
+  <div class="upload-zone" id="upload-zone">
+    <div class="upload-icon">📄</div>
+    <h2>Upload your document</h2>
+    <p>Drag & drop or click to select a file to extract and fill form fields</p>
+    <div class="formats">
+      <span class="format-badge">DOCX</span>
+      <span class="format-badge">PDF</span>
+      <span class="format-badge">TXT / HTML</span>
+    </div>
+    <button class="btn-upload" onclick="document.getElementById('file-input').click()">Choose File</button>
+    <input type="file" id="file-input" accept=".docx,.pdf,.txt,.html">
+  </div>
+</div>
+
+<!-- ══════════════ APP SHELL ══════════════ -->
+<div id="app">
+
+  <!-- TOOLBAR -->
+  <div id="toolbar">
+    <a class="toolbar-brand" href="#" onclick="resetToUpload(); return false;">
+      ◈ Leegality<span class="dot">.</span>
+    </a>
+    <span id="filename-chip">No file</span>
+    <div class="toolbar-spacer"></div>
+    <div class="ai-toggle-wrap" id="ai-toggle-wrap" style="display:none">
+      <span id="ai-status-dot"></span>
+      <span class="ai-toggle-label" id="ai-toggle-label">AI</span>
+      <label class="ai-toggle" title="Toggle between Claude AI detection and offline pattern detection">
+        <input type="checkbox" id="ai-toggle-cb" checked onchange="onAiToggleChange()">
+        <span class="ai-toggle-slider"></span>
+      </label>
+    </div>
+    <button class="toolbar-btn" id="btn-new" onclick="resetToUpload()">⬆ New File</button>
+    <button class="toolbar-btn primary" id="btn-detect" onclick="openModeModal()" disabled>
+      Next →
+    </button>
+    <span id="mode-badge" style="display:none;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;"></span>
+    <div class="export-wrap">
+      <button class="toolbar-btn" id="btn-export" onclick="toggleExportMenu()" disabled>Export ▾</button>
+      <div class="export-menu" id="export-menu">
+        <button onclick="exportHtml()">⬇ Download HTML</button>
+        <button onclick="exportAsTxt()">💾 Save as TXT (Leegality format)</button>
+        <div class="export-sep"></div>
+        <button onclick="exportRawTxt()">📄 Save Converted HTML as TXT</button>
+        <div class="export-sep"></div>
+        <button onclick="exportPrint()">🖨 Print / Save PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+
+    <!-- DOCUMENT VIEWER -->
+    <div id="doc-viewer">
+      <iframe id="doc-frame" title="Document preview"></iframe>
+
+      <!-- Failed injection banner -->
+      <div id="failed-banner">
+        <strong>⚠ Some fields could not be injected automatically:</strong>
+        <div class="failed-list" id="failed-list"></div>
+      </div>
+
+      <!-- Detection overlay -->
+      <div id="detect-overlay">
+        <div class="spinner"></div>
+        <div class="detect-msg" id="detect-msg">Converting document…</div>
+      </div>
+    </div>
+
+    <!-- FIELD PANEL -->
+    <div id="field-panel">
+      <div id="panel-header">
+        <h3>Form Fields</h3>
+        <span id="panel-count">0</span>
+      </div>
+      <div id="fields-list">
+        <div class="no-fields">Upload a document and run field detection to see fillable fields here.</div>
+      </div>
+    </div>
+
+  </div><!-- #main -->
+</div><!-- #app -->
+
+<!-- ══════════════ REVIEW MODAL ══════════════ -->
+<div id="review-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <h2>Review Detected Fields</h2>
+        <p id="review-subtitle">Approve, rename, or reject each proposed field before injection.</p>
+        <p id="review-mode-tag" style="display:none;margin-top:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;display:inline-block;"></p>
+      </div>
+      <button class="modal-close" onclick="closeReview()">✕</button>
+    </div>
+    <div style="padding:8px 20px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-shrink:0;background:var(--bg)">
+      <input id="review-search" type="text" placeholder="Search fields…" oninput="filterReviewCards()" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;outline:none;">
+      <select id="review-filter" onchange="filterReviewCards()" style="padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;outline:none;background:var(--surface);color:var(--text)">
+        <option value="all">All</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+        <option value="unnamed">Unnamed (FIELD N)</option>
+      </select>
+    </div>
+    <div class="modal-body" id="review-body"></div>
+    <div class="modal-foot">
+      <span class="count-info" id="review-count-info"></span>
+      <button class="btn btn-ghost" onclick="rejectUnnamed()" title="Reject all fields with generic names like FIELD 1, FIELD 2, etc.">Reject Unnamed</button>
+      <button class="btn btn-ghost" onclick="approveAll()">Approve All</button>
+      <button class="btn btn-primary" id="btn-inject" onclick="injectApproved()">Inject Fields →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ DETECTION MODE MODAL ══════════════ -->
+<div id="detect-mode-modal">
+  <div class="dm-header">
+    <button class="ps-back" onclick="closeModeModal()">← Back</button>
+    <span class="ps-title">Choose Detection Mode</span>
+  </div>
+  <div class="dm-body">
+    <div class="dm-card selected" id="dm-card-ai" onclick="selectDetectMode('ai')">
+      <div class="dm-card-icon">🤖</div>
+      <div class="dm-card-title">Claude AI</div>
+      <div class="dm-card-desc">Uses Claude to intelligently detect form fields, understand context, and handle complex layouts.</div>
+      <div class="dm-card-badge">Recommended</div>
+    </div>
+    <div class="dm-card" id="dm-card-offline" onclick="selectDetectMode('offline')">
+      <div class="dm-card-icon">⚡</div>
+      <div class="dm-card-title">Offline Mode</div>
+      <div class="dm-card-desc">Pattern-based detection that works without internet. Fast and private — no data leaves your device.</div>
+    </div>
+  </div>
+  <div class="dm-footer">
+    <button id="dm-detect-btn" onclick="runDetectionFromModal()">Detect Fields →</button>
+  </div>
+</div>
+
+<!-- ══════════════ PAGE SELECTOR (full screen) ══════════════ -->
+<div id="page-selector-modal">
+  <div class="ps-header">
+    <button class="ps-back" onclick="closePageSelector()">← Back</button>
+    <span class="ps-title" id="ps-title">Select Sections to Process</span>
+    <span class="ps-counter" id="ps-counter">0 of 0 sections selected</span>
+  </div>
+  <div class="ps-body">
+
+    <!-- Left: section list -->
+    <div class="ps-sidebar">
+      <div class="ps-sidebar-list" id="ps-sidebar-list"></div>
+      <div class="ps-sidebar-actions">
+        <button onclick="psSelectAll()">Select All</button>
+        <button onclick="psClearAll()">Clear All</button>
+      </div>
+    </div>
+
+    <!-- Center: live HTML preview -->
+    <div class="ps-preview">
+      <iframe id="ps-preview-frame" title="Section preview"></iframe>
+      <div class="ps-preview-empty" id="ps-preview-empty">Select a section to preview</div>
+    </div>
+
+    <!-- Right: context panel -->
+    <div class="ps-context">
+      <div class="ps-context-heading">Detection Options</div>
+      <div class="ps-cg">
+        <label for="ps-doc-type">Document type</label>
+        <input id="ps-doc-type" type="text" placeholder="e.g., Bank loan agreement, Tenancy agreement">
+      </div>
+      <div class="ps-cg">
+        <label for="ps-extra">Extra instructions</label>
+        <textarea id="ps-extra" placeholder="e.g., Focus on blank fields after colons. Treat underscores as fillable areas."></textarea>
+      </div>
+      <div class="ps-cg">
+        <label id="ps-section-inst-label">Section instructions</label>
+        <textarea id="ps-page-inst" placeholder="e.g., Skip the signature table in this section"></textarea>
+      </div>
+      <div class="ps-cg">
+        <label for="ps-model">AI Model</label>
+        <select id="ps-model">
+          <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
+          <option value="claude-sonnet-5">Claude Sonnet 5 (Best quality)</option>
+          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Fastest)</option>
+        </select>
+      </div>
+      <div class="ps-toggle-row">
+        <div class="ps-toggle-info">
+          <strong>Continuity pass</strong>
+          <small>Pass detected field names from each section to the next for consistent naming</small>
+        </div>
+        <label class="ps-sw">
+          <input type="checkbox" id="ps-continuity">
+          <span class="ps-sw-slider"></span>
+        </label>
+      </div>
+      <button id="ps-detect-btn" onclick="runDetectionWithSelection()" disabled>
+        Detect Fields →
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+const state = {
+  fileName: '',
+  rawHtml: '',          // Injection-target HTML (table-based for PDFs, mammoth for DOCX)
+  previewHtml: '',      // Canvas-image HTML for PDF visual preview (empty for DOCX)
+  injectedHtml: '',     // HTML after field injection
+  proposedFields: [],
+  lastDetectionMode: '',
+  fieldValues: {},
+  reviewStates: [],
+};
+
+// PDF.js worker
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ════════════════════════════════════════════════════════════════
+// UPLOAD HANDLING
+// ════════════════════════════════════════════════════════════════
+const uploadZone = document.getElementById('upload-zone');
+const fileInput  = document.getElementById('file-input');
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+uploadZone.addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') fileInput.click();
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  state.fileName = file.name;
+  showApp();
+  document.getElementById('filename-chip').textContent = file.name;
+  showOverlay('Converting document…');
+
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+
+    if (ext === 'docx') {
+      state.rawHtml = await convertDocx(file);
+      state.previewHtml = '';
+    } else if (ext === 'pdf') {
+      showOverlay('Rendering pages…');
+      const result = await convertPdf(file);
+      state.rawHtml    = result.injectionHtml;
+      state.previewHtml = result.previewHtml;
+    } else if (ext === 'txt' || ext === 'html') {
+      state.rawHtml = await file.text();
+      state.previewHtml = '';
+    } else {
+      throw new Error('Unsupported file type: ' + ext);
+    }
+
+    // Check if already a Leegality template (has leegality-* inputs).
+    // Exclude fresh PDF conversions — they never have pre-injected fields.
+    if (!state.previewHtml && /leegality-textbox|leegality-checkbox|leegality-radio|leegality-select/.test(state.rawHtml)) {
+      state.injectedHtml = state.rawHtml;
+      loadIframe(state.injectedHtml);
+      hideOverlay();
+      document.getElementById('btn-export').disabled = false;
+      toast('Existing Leegality template loaded — ready to fill!', 'success');
+    } else {
+      hideOverlay();
+      // Show preview and enable Next button — user chooses detection mode next
+      if (state.previewHtml) loadIframe(state.previewHtml);
+      else loadIframe(state.rawHtml);
+      document.getElementById('btn-detect').disabled = false;
+      toast('Document converted — click "Next" to choose detection mode.');
+    }
+  } catch (err) {
+    hideOverlay();
+    toast('Error: ' + err.message, 'error');
+    console.error(err);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// CONVERTERS
+// ════════════════════════════════════════════════════════════════
+// Convert a raw PDF ArrayBuffer using pdfjs canvas renderer → HTML with <img> pages
+async function convertPdfFromBuffer(pdfBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: pdfBuffer }).promise;
+  let html = '<div class="pdf-doc">';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page   = await pdf.getPage(p);
+    const vp     = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement('canvas');
+    canvas.width  = Math.round(vp.width);
+    canvas.height = Math.round(vp.height);
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    const dataUrl = canvas.toDataURL('image/png');
+    html += `<div class="pdf-page" style="width:${canvas.width}px;max-width:100%;margin:0 auto 24px;border:1px solid #ddd;">`;
+    html += `<img src="${dataUrl}" style="display:block;width:100%;max-width:100%;" alt="Page ${p}">`;
+    html += `</div>`;
+  }
+  return html + '</div>';
+}
+
+async function convertDocx(file) {
+  // Always use mammoth for DOCX — produces real HTML for inline field injection
+  const ab = await file.arrayBuffer();
+  const result = await mammoth.convertToHtml({ arrayBuffer: ab }, {
+    styleMap: [
+      // ── Headings ──────────────────────────────────────────────
+      "p[style-name='Heading 1'] => h1:fresh",
+      "p[style-name='Heading1']  => h1:fresh",
+      "p[style-name='Heading 2'] => h2:fresh",
+      "p[style-name='Heading 3'] => h3:fresh",
+      "p[style-name='Title']     => h1:fresh",
+      "p[style-name='Subtitle']  => h2:fresh",
+
+      // ── Body text styles ──────────────────────────────────────
+      "p[style-name='Body Text']       => p.body-text:fresh",
+      "p[style-name='BodyText']        => p.body-text:fresh",
+      "p[style-name='Body Text 2']     => p.body-text:fresh",
+      "p[style-name='Body Text Indent']=> p.body-text:fresh",
+
+      // ── List styles: let mammoth handle natively ─────────────
+      // DO NOT override List Paragraph / List Bullet / List Number here.
+      // mammoth reads numPr (numId + ilvl) from the DOCX XML to correctly
+      // output <ol> for numbered lists and <ul> for bulleted lists, preserving
+      // nesting depth and list-style-type (decimal, lower-alpha, lower-roman, etc.).
+
+      // ── Table paragraph ───────────────────────────────────────
+      "p[style-name='Table Paragraph'] => p.table-para:fresh",
+
+      // ── Character styles ──────────────────────────────────────
+      "b        => strong",
+      "i        => em",
+      "u        => u",
+      "strike   => s",
+      "br       => br",
+
+      // ── Highlight → <mark> ────────────────────────────────────
+      "r[highlight] => mark",
+    ],
+    convertImage: mammoth.images.inline(element => {
+      return element.read('base64').then(data => ({
+        src: `data:${element.contentType};base64,${data}`
+      }));
+    }),
+    ignoreEmptyParagraphs: false,
+    includeDefaultStyleMap: true,
+  });
+  if (result.messages.length) console.log('mammoth warnings:', result.messages);
+
+  let html = result.value;
+
+  // Wrap consecutive <li> items in <ul> — mammoth outputs bare <li> tags
+  html = wrapListItems(html);
+  html = repairMammothLists(html);
+
+  // Post-process: restore table borders, cell structure, blank underline → underscores
+  html = restoreDocxFormatting(html);
+  return html;
+}
+
+// Wrap any truly bare <li> elements (not already inside <ol>/<ul>) in <ul> as fallback.
+// When mammoth's default list handling is active, <ol>/<ul> are output correctly.
+// This only catches edge-case bare <li> from custom/unknown DOCX list styles.
+function wrapListItems(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<body>${html}</body>`, 'text/html');
+  const body = doc.body;
+  // Find <li> elements whose direct parent is not <ol> or <ul>
+  body.querySelectorAll('li').forEach(li => {
+    const parent = li.parentElement;
+    if (parent && parent.tagName !== 'OL' && parent.tagName !== 'UL') {
+      // Collect this run of bare sibling <li> elements and wrap them
+      const siblings = [];
+      let node = li;
+      while (node && node.tagName === 'LI') {
+        siblings.push(node);
+        node = node.nextElementSibling;
+      }
+      const ul = doc.createElement('ul');
+      parent.insertBefore(ul, siblings[0]);
+      siblings.forEach(s => ul.appendChild(s));
+    }
+  });
+  return body.innerHTML;
+}
+
+// Fix mammoth's flat list output. When paragraphs use non-standard styles (e.g. NoSpacing)
+// mammoth outputs each indented paragraph as a separate body-level <ul> wrapper:
+//   Level 0: <ol><li>Heading</li></ol>
+//   Level 1: <ul><li><ol><li>Sub</li></ol></li></ul>          ← 1 ul wrapper
+//   Level 2: <ul><li><ul><li><ol><li>Deep</li></ol></li></ul></li></ul>  ← 2 ul wrappers
+// This function collapses them into proper nested lists.
+function repairMammothLists(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<body>${html}</body>`, 'text/html');
+  const body = doc.body;
+
+  // Returns true if el is a mammoth "spacer" wrapper: <ul><li>(only a list, no text)</li></ul>
+  function isWrapper(el) {
+    if (!el || el.tagName !== 'UL') return false;
+    if (el.children.length !== 1 || el.children[0].tagName !== 'LI') return false;
+    const li = el.children[0];
+    if (li.children.length !== 1) return false;
+    const inner = li.children[0];
+    if (inner.tagName !== 'OL' && inner.tagName !== 'UL') return false;
+    // li must have no direct text
+    const directText = Array.from(li.childNodes)
+      .filter(n => n.nodeType === Node.TEXT_NODE)
+      .map(n => n.textContent.trim()).join('');
+    return directText === '';
+  }
+
+  // Count how many ul wrappers surround the actual content list
+  function wrapDepth(el) {
+    let d = 0, cur = el;
+    while (isWrapper(cur)) { d++; cur = cur.children[0].children[0]; }
+    return d;
+  }
+
+  // Extract the innermost non-wrapper list
+  function innerList(el) {
+    let cur = el;
+    while (isWrapper(cur)) cur = cur.children[0].children[0];
+    return cur;
+  }
+
+  // Navigate into a list 'depth' levels deep through last-li chains, return the list at that depth
+  function lastListAtDepth(list, depth) {
+    let cur = list;
+    for (let d = 0; d < depth; d++) {
+      if (!cur || (cur.tagName !== 'OL' && cur.tagName !== 'UL')) return null;
+      const lastLi = cur.lastElementChild;
+      if (!lastLi || lastLi.tagName !== 'LI') return null;
+      const nested = Array.from(lastLi.children).filter(c => c.tagName === 'OL' || c.tagName === 'UL').pop();
+      if (!nested) return null;
+      cur = nested;
+    }
+    return cur;
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const kids = Array.from(body.children);
+
+    for (let i = 0; i < kids.length; i++) {
+      const el = kids[i];
+      if (!el.parentElement || !isWrapper(el)) continue;
+
+      const depth = wrapDepth(el);
+      const inner = innerList(el);
+
+      // Find previous body-level list, skipping empty paragraphs
+      let pi = i - 1;
+      while (pi >= 0 && kids[pi].tagName === 'P' && !kids[pi].textContent.trim()) pi--;
+      if (pi < 0 || !kids[pi].parentElement) continue;
+
+      const prevEl = kids[pi];
+      const isTopLevelList = prevEl.tagName === 'OL' || prevEl.tagName === 'UL';
+      const isShallowerWrapper = isWrapper(prevEl) && wrapDepth(prevEl) === depth - 1;
+
+      let targetList = null;
+      if (depth === 1 && isTopLevelList) {
+        targetList = prevEl;
+      } else if (depth === 1 && isShallowerWrapper) {
+        targetList = innerList(prevEl); // shouldn't happen but safe fallback
+      } else if (depth > 1 && isTopLevelList) {
+        targetList = lastListAtDepth(prevEl, depth - 1);
+      } else if (isShallowerWrapper) {
+        targetList = lastListAtDepth(innerList(prevEl), depth - 2);
+      }
+
+      if (!targetList) continue;
+
+      const lastLi = targetList.lastElementChild;
+      if (!lastLi || lastLi.tagName !== 'LI') continue;
+
+      // If last li already has a list of the same type, merge siblings into it
+      const existing = Array.from(lastLi.children).find(c => c.tagName === inner.tagName);
+      if (existing) {
+        while (inner.firstChild) existing.appendChild(inner.firstChild);
+      } else {
+        lastLi.appendChild(inner);
+      }
+      el.remove();
+      changed = true;
+      break; // restart — DOM changed
+    }
+  }
+
+  return body.innerHTML;
+}
+
+function restoreDocxFormatting(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<body>${html}</body>`, 'text/html');
+
+  // ── Tables ────────────────────────────────────────────────────
+  doc.querySelectorAll('table').forEach(t => {
+    t.setAttribute('border', '1');
+    t.setAttribute('cellpadding', '1');
+    t.style.borderCollapse = 'collapse';
+    t.style.width = '100%';
+    // Remove any table-level margin/padding that causes spacing issues
+    t.style.margin = '0';
+  });
+
+  // ── Table cells: normalise to Leegality's line-height:1 div format ───
+  doc.querySelectorAll('td, th').forEach(cell => {
+    // Step 1: replace each <p> with a <div style="line-height:1">
+    // Empty <p>/<br> are removed; content <p> becomes a div
+    Array.from(cell.querySelectorAll('p')).forEach(p => {
+      const innerTxt = p.textContent.trim();
+      const innerHtml = p.innerHTML.trim();
+      const isEmpty = !innerTxt && !p.querySelector('img, input, select');
+      if (isEmpty) { p.remove(); return; }
+      const div = doc.createElement('div');
+      div.setAttribute('style', 'line-height:1');
+      div.innerHTML = innerHtml;
+      p.replaceWith(div);
+    });
+
+    // Step 2: if cell still has no line-height wrapper, add one
+    const hasWrapper = !!cell.querySelector(':scope > div[style*="line-height"]');
+    if (!hasWrapper) {
+      const inner = cell.innerHTML.trim();
+      if (inner) cell.innerHTML = `<div style="line-height:1">${inner}</div>`;
+    }
+
+    // Step 3: remove any remaining bare <br> at cell top level
+    Array.from(cell.childNodes).forEach(n => {
+      if (n.nodeName === 'BR') n.remove();
+    });
+  });
+
+  // ── Blank <u> → underscores so Claude can target them ────────
+  doc.querySelectorAll('u').forEach(u => {
+    const txt = u.textContent;
+    if (/^\s*$/.test(txt) && txt.length > 0) {
+      u.textContent = '_'.repeat(Math.max(8, txt.length * 2));
+    }
+  });
+
+  // ── Preserve <mark> inside table cells (don't strip it) ──────
+  // Already handled — mark is a valid inline element
+
+  // ── Detect centred h1 via inline style and add .centered class ─
+  doc.querySelectorAll('h1[style*="text-align"]').forEach(h => {
+    if (h.style.textAlign === 'center') h.classList.add('centered');
+  });
+
+  return doc.body.innerHTML;
+}
+
+async function convertPdf(file) {
+  const ab  = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
+
+  const RENDER_SCALE = 2;   // canvas quality
+  const LAYOUT_SCALE = 1;   // text extraction (native PDF units)
+
+  let previewHtml   = '<div class="pdf-doc">';
+  let allItems      = [];   // text items for injection HTML
+  let pageWidth     = 612;  // will be updated per page
+  let totalChars    = 0;
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page   = await pdf.getPage(p);
+
+    // ── Canvas render → preview ──
+    const vpR    = page.getViewport({ scale: RENDER_SCALE });
+    const canvas = document.createElement('canvas');
+    canvas.width  = Math.round(vpR.width);
+    canvas.height = Math.round(vpR.height);
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vpR }).promise;
+    const imgSrc = canvas.toDataURL('image/jpeg', 0.88);
+    const pbPct  = (vpR.height / vpR.width * 100).toFixed(3);
+    previewHtml += `<div class="pdf-page" data-page="${p}" style="position:relative;width:100%;padding-bottom:${pbPct}%;margin:0 0 16px;overflow:hidden;">`;
+    previewHtml += `<img src="${imgSrc}" style="position:absolute;inset:0;width:100%;height:100%;display:block;" alt="Page ${p}">`;
+    previewHtml += `</div>`;
+
+    // ── Text extraction → injection HTML items ──
+    const vpL = page.getViewport({ scale: LAYOUT_SCALE });
+    pageWidth  = vpL.width;
+    const H    = vpL.height;
+    const tc   = await page.getTextContent({ includeMarkedContent: false });
+
+    for (const item of tc.items) {
+      if (!item.str || !item.str.trim()) continue;
+      totalChars += item.str.length;
+      const tx = pdfjsLib.Util.transform(vpL.transform, item.transform);
+      const x  = Math.max(0, tx[4]);
+      const y  = H - tx[5];  // flip: 0 = top of page
+      const w  = Math.max(1, item.width);
+      const fs = Math.abs(item.transform[3]);
+      allItems.push({ x, y, w, h: fs, text: item.str, fontSize: fs, page: p });
+    }
+
+    if (p === 1 && totalChars < 50) {
+      throw new Error(
+        'This appears to be a scanned / image-only PDF. ' +
+        'Please convert it to DOCX first (Word → File → Save As → .docx), then re-upload.'
+      );
+    }
+  }
+
+  previewHtml += '</div>';
+  const injectionHtml = buildPdfInjectionHtml(allItems, pageWidth);
+  return { previewHtml, injectionHtml };
+}
+
+// ── PDF → table-based injection HTML ────────────────────────────────────────
+
+function buildPdfInjectionHtml(allItems, pageWidth) {
+  if (!allItems.length) return '<p>(No text found in PDF)</p>';
+
+  // Sort: page → Y (top-down) → X (left-right)
+  allItems.sort((a, b) => {
+    if (a.page !== b.page) return a.page - b.page;
+    if (Math.abs(a.y - b.y) > 6) return a.y - b.y;
+    return a.x - b.x;
+  });
+
+  // Group items into rows: same page, Y within 8pt
+  const rows = [];
+  let curRow = [], curY = -Infinity, curPage = -1;
+  for (const item of allItems) {
+    if (item.page !== curPage || Math.abs(item.y - curY) > 8) {
+      if (curRow.length) rows.push(curRow);
+      curRow   = [item];
+      curY     = item.y;
+      curPage  = item.page;
+    } else {
+      curRow.push(item);
+      curY = curRow.reduce((s, i) => s + i.y, 0) / curRow.length;
+    }
+  }
+  if (curRow.length) rows.push(curRow);
+
+  let html = '<div class="pdf-form" style="font-family:Arial,sans-serif;font-size:9pt;line-height:1.5;width:100%;">';
+  let tableOpen = false;
+  let lastPage  = -1;
+
+  const openTable = () => {
+    if (!tableOpen) {
+      html += '<table border="1" cellpadding="4" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:0;">';
+      tableOpen = true;
+    }
+  };
+  const closeTable = () => {
+    if (tableOpen) { html += '</table>'; tableOpen = false; }
+  };
+
+  for (const row of rows) {
+    // Page break divider
+    if (row[0].page !== lastPage) {
+      if (lastPage !== -1) { closeTable(); html += '<div style="border-top:3px solid #555;margin:16px 0 8px;"></div>'; }
+      lastPage = row[0].page;
+    }
+
+    const rowText = row.map(i => i.text).join(' ').trim();
+    if (!rowText) continue;
+
+    // ── Section header detection ──
+    if (pdfIsSectionHeader(row, pageWidth)) {
+      closeTable();
+      html += `<div class="pdf-section-header" style="background:#1a1a1a;color:#fff;font-weight:bold;padding:5px 8px;margin:10px 0 0;font-size:9pt;">${escHtml(rowText)}</div>`;
+      continue;
+    }
+
+    // ── Split row into column groups by gaps > 35pt ──
+    const colGroups = pdfSplitColGroups(row, 35);
+    const colWidths = pdfCalcColWidths(colGroups, pageWidth);
+
+    openTable();
+    html += '<tr>';
+    for (let ci = 0; ci < colGroups.length; ci++) {
+      const group  = colGroups[ci];
+      const wPct   = colWidths[ci];
+      const isCharBox = pdfIsCharBoxGroup(group);
+
+      if (isCharBox) {
+        // Infer field name from nearest label to the left
+        let name = '';
+        for (let li = ci - 1; li >= 0; li--) {
+          const t = colGroups[li].map(i => i.text).join(' ').trim();
+          if (t) { name = t.replace(/:?\s*$/, '').trim(); break; }
+        }
+        if (!name) name = rowText.split(':')[0].trim() || 'Field';
+        // Use bracketed placeholder — AI detects these as fillable positions
+        html += `<td style="width:${wPct}%;padding:3px 6px;">[${escHtml(name)}]</td>`;
+      } else {
+        const cellText = group.map(i => i.text).join(' ');
+        const bold     = group.some(i => i.fontSize >= 11);
+        html += `<td style="width:${wPct}%;padding:3px 6px;">`;
+        html += bold ? `<strong>${escHtml(cellText)}</strong>` : escHtml(cellText);
+        html += `</td>`;
+      }
+    }
+    html += '</tr>';
+  }
+
+  closeTable();
+  html += '</div>';
+  return html;
+}
+
+function pdfIsSectionHeader(row, pageWidth) {
+  if (!row.length) return false;
+  const text    = row.map(i => i.text).join(' ').trim();
+  const isUpper = text.length > 4 && text === text.toUpperCase();
+  const span    = row.length === 1
+    ? row[0].w
+    : (row[row.length - 1].x + row[row.length - 1].w) - row[0].x;
+  const isWide  = span / pageWidth > 0.30;
+  const isLarge = row[0].fontSize > 12;
+  const isFew   = row.length <= 5;
+  return isFew && (isLarge || (isUpper && isWide));
+}
+
+function pdfSplitColGroups(row, gapPt) {
+  const sorted = [...row].sort((a, b) => a.x - b.x);
+  const groups = [[sorted[0]]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const gap  = sorted[i].x - (prev.x + prev.w);
+    if (gap > gapPt) groups.push([sorted[i]]);
+    else groups[groups.length - 1].push(sorted[i]);
+  }
+  return groups;
+}
+
+function pdfCalcColWidths(colGroups, pageWidth) {
+  return colGroups.map((g, i) => {
+    const left  = g[0].x;
+    const right = i < colGroups.length - 1
+      ? colGroups[i + 1][0].x
+      : pageWidth;
+    return Math.max(5, ((right - left) / pageWidth * 100)).toFixed(1);
+  });
+}
+
+function pdfIsCharBoxGroup(items) {
+  if (items.length < 4) return false;
+  // Most items must be 1-3 characters (D, M, Y, placeholder chars)
+  const short = items.filter(i => i.text.trim().length <= 3);
+  if (short.length < items.length * 0.75) return false;
+  // Must be evenly spaced (gap variance < 60% of mean gap)
+  const sorted = [...items].sort((a, b) => a.x - b.x);
+  const gaps   = [];
+  for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i].x - sorted[i - 1].x);
+  if (!gaps.length) return false;
+  const mean = gaps.reduce((s, g) => s + g, 0) / gaps.length;
+  const variance = gaps.reduce((s, g) => s + Math.abs(g - mean), 0) / gaps.length;
+  return mean > 0 && variance < mean * 0.65;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ════════════════════════════════════════════════════════════════
+// IFRAME LOADER
+// ════════════════════════════════════════════════════════════════
+const IFRAME_STYLE = `
+<style>
+  * { box-sizing: border-box; }
+
+  /* ── Page — A4-like with document margins ── */
+  body {
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #000;
+    background: #fff;
+    margin: 0;
+    padding: 40px 50px 20px 70px; /* approximates DOCX margins: top~0.56" left~0.98" right~0.69" */
+    max-width: 820px;
+  }
+  .font-arial { font-family: Arial, sans-serif !important; }
+
+  /* ── Headings — map to DOCX Heading1 style ── */
+  h1 {
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 10pt 0 4pt 0;
+    text-align: left;
+    line-height: 1.4;
+  }
+  h1.centered { text-align: center; }
+  h2 { font-size: 11pt; font-weight: bold; margin: 8pt 0 4pt 0; }
+
+  /* ── Body text — DOCX BodyText style: justified, left-indented ── */
+  p {
+    font-size: 11pt;
+    text-align: justify;
+    margin: 3pt 0;
+    line-height: 1.5;
+  }
+  p.body-text {
+    margin-left: 0; /* Calibri body text from DOCX */
+    text-align: justify;
+  }
+
+  /* ── Lists ── */
+  ul, ol {
+    margin: 4pt 0;
+    padding-left: 24pt;
+  }
+  li {
+    font-size: 11pt;
+    text-align: justify;
+    margin-bottom: 2pt;
+    line-height: 1.5;
+  }
+  /* Nested ol levels — match common DOCX list-number style */
+  ol                { list-style-type: decimal; }
+  ol ol             { list-style-type: lower-alpha; }
+  ol ol ol          { list-style-type: lower-roman; }
+  ol ol ol ol       { list-style-type: decimal; }
+  /* Nested ul levels */
+  ul                { list-style-type: disc; }
+  ul ul             { list-style-type: circle; }
+  ul ul ul          { list-style-type: square; }
+  /* Preserve list-style-type if mammoth/normalizer sets it inline */
+  [style*="list-style-type"] { list-style-type: revert; }
+
+  /* ── Highlighted fields (yellow) — map DOCX highlight ── */
+  mark {
+    background-color: #ffff00;
+    color: #000;
+    padding: 0 1px;
+  }
+
+  /* ── Underline blanks ── */
+  u { text-decoration: underline; }
+
+  /* ── Table formatting — signature block etc. ── */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 8pt 0;
+  }
+  table[border="0"] td, table[border="0"] th { border: none; }
+  table[border="1"] td, table[border="1"] th,
+  table td[style*="border"], table th[style*="border"] {
+    border: 1px solid #000;
+  }
+  td, th {
+    padding: 4pt 6pt;
+    vertical-align: top;
+    font-size: 11pt;
+  }
+  td[style*="background-color: rgb(221, 221, 221)"],
+  td[style*="background-color:rgb(221, 221, 221)"] {
+    background-color: #ddd !important;
+  }
+
+  /* ── Leegality field styles ── */
+  input.leegality-textbox, select.leegality-select {
+    border: none;
+    border-bottom: 1.5px solid #2563eb;
+    border-radius: 0;
+    padding: 1px 4px;
+    font-family: inherit;
+    font-size: inherit;
+    background: transparent;
+    min-width: 80px;
+    outline: none;
+    color: #1a1a1a;
+    transition: border-color .15s;
+    vertical-align: baseline;
+  }
+  input.leegality-textbox:focus, select.leegality-select:focus {
+    border-bottom-color: #1d4ed8;
+    background: #eff6ff;
+  }
+  input.leegality-checkbox, input.leegality-radio {
+    accent-color: #2563eb; width: 14px; height: 14px; cursor: pointer;
+  }
+  label { font-size: inherit; cursor: pointer; }
+
+  strong, b { font-weight: bold; }
+  em, i { font-style: italic; }
+
+  /* ── PDF canvas preview ── */
+  .pdf-doc { padding: 0; margin: 0; }
+  body:has(.pdf-doc) { padding: 12px; max-width: 100%; }
+
+  /* ── PDF injection HTML (table reconstruction) ── */
+  .pdf-form {
+    padding: 8px;
+    max-width: 100%;
+  }
+  .pdf-form table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+    margin-bottom: 0;
+  }
+  .pdf-form td {
+    border: 1px solid #bbb;
+    padding: 3px 6px;
+    vertical-align: top;
+    font-size: 9pt;
+    word-break: break-word;
+  }
+  .pdf-section-header {
+    background: #1a1a1a;
+    color: #fff;
+    font-weight: bold;
+    padding: 5px 8px;
+    font-size: 9pt;
+    margin: 10px 0 0;
+  }
+  body:has(.pdf-form) { padding: 0; max-width: 100%; }
+</style>`;
+
+
+function loadIframe(html) {
+  const frame = document.getElementById('doc-frame');
+  const full  = `<!DOCTYPE html><html><head><meta charset="UTF-8">${IFRAME_STYLE}</head><body>${html}</body></html>`;
+
+  // Remove previous load handler to avoid double-firing
+  if (frame._loadHandler) {
+    frame.removeEventListener('load', frame._loadHandler);
+    frame._loadHandler = null;
+  }
+
+  frame._loadHandler = function () {
+    frame.removeEventListener('load', frame._loadHandler);
+    frame._loadHandler = null;
+    const doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document);
+    if (doc && doc.body) {
+      bindFieldsInFrame(doc);
+    } else {
+      setTimeout(() => {
+        const d = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document);
+        if (d) bindFieldsInFrame(d);
+      }, 150);
+    }
+  };
+
+  frame.addEventListener('load', frame._loadHandler);
+
+  if (window.location.protocol === 'file:') {
+    // file:// — use Blob URL (srcdoc blocked by some browsers on file://)
+    const blob = new Blob([full], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    if (frame._blobUrl) URL.revokeObjectURL(frame._blobUrl);
+    frame._blobUrl = url;
+    frame.src = url;
+    setTimeout(() => { if (frame._blobUrl) { URL.revokeObjectURL(frame._blobUrl); frame._blobUrl = null; } }, 3000);
+  } else {
+    // http:// — srcdoc is reliable and gives direct contentDocument access
+    frame.srcdoc = full;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIELD BINDING (iframe ↔ panel two-way sync)
+// ════════════════════════════════════════════════════════════════
+function bindFieldsInFrame(frameDoc) {
+  if (!frameDoc) return;
+  const inputs = [...frameDoc.querySelectorAll(
+    'input.leegality-textbox, input.leegality-checkbox, input.leegality-radio, select.leegality-select'
+  )];
+
+  // Group by name
+  const groups = new Map();
+  inputs.forEach(inp => {
+    const n = inp.getAttribute('name') || '';
+    if (!groups.has(n)) groups.set(n, []);
+    groups.get(n).push(inp);
+  });
+
+  // Restore saved values
+  groups.forEach((inps, name) => {
+    if (state.fieldValues[name] !== undefined) {
+      inps.forEach(i => { i.value = state.fieldValues[name]; });
+    }
+    // Listen for changes in iframe
+    inps.forEach(i => {
+      i.addEventListener('input', () => {
+        const val = i.type === 'checkbox' ? (i.checked ? i.value : '') : i.value;
+        state.fieldValues[name] = val;
+        syncPanelInput(name, val);
+        // Sync sibling inputs with same name in iframe
+        groups.get(name).forEach(other => {
+          if (other !== i && other.type !== 'checkbox' && other.type !== 'radio') other.value = val;
+        });
+      });
+    });
+  });
+
+  buildFieldPanel(groups);
+}
+
+function syncPanelInput(name, value) {
+  const el = document.querySelector(`#fields-list .panel-input[data-name="${CSS.escape(name)}"]`);
+  if (el && el.value !== value) el.value = value;
+}
+
+function buildFieldPanel(groups) {
+  const list = document.getElementById('fields-list');
+  const count = document.getElementById('panel-count');
+
+  if (!groups || groups.size === 0) {
+    list.innerHTML = '<div class="no-fields">No fillable fields detected.</div>';
+    count.textContent = '0';
+    return;
+  }
+
+  list.innerHTML = '';
+  count.textContent = groups.size;
+
+  groups.forEach((inps, name) => {
+    if (!name) return;
+    const card = document.createElement('div');
+    card.className = 'field-card';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'field-card-label';
+    lbl.textContent = name;
+    lbl.title = name;
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'panel-input';
+    inp.setAttribute('data-name', name);
+    inp.placeholder = 'Enter value…';
+    inp.value = state.fieldValues[name] || '';
+
+    inp.addEventListener('input', () => {
+      state.fieldValues[name] = inp.value;
+      // Sync to iframe
+      const frame = document.getElementById('doc-frame');
+      if (frame.contentDocument) {
+        frame.contentDocument.querySelectorAll(`[name="${CSS.escape(name)}"]`).forEach(fi => {
+          if (fi.value !== inp.value) fi.value = inp.value;
+        });
+      }
+    });
+
+    card.appendChild(lbl);
+    card.appendChild(inp);
+    list.appendChild(card);
+  });
+
+  document.getElementById('btn-export').disabled = false;
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIELD DETECTION  (calls server → Claude)
+// ════════════════════════════════════════════════════════════════
+// ── AI toggle state ──────────────────────────────────────────────
+function canUseServer() {
+  return window.location.protocol !== 'file:' && window.location.hostname !== '';
+}
+function aiToggleEnabled() {
+  const cb = document.getElementById('ai-toggle-cb');
+  return cb ? cb.checked : false;
+}
+function onAiToggleChange() {
+  updateAiToggleUI();
+}
+function updateAiToggleUI(serverOk) {
+  const wrap  = document.getElementById('ai-toggle-wrap');
+  const dot   = document.getElementById('ai-status-dot');
+  const label = document.getElementById('ai-toggle-label');
+  const cb    = document.getElementById('ai-toggle-cb');
+  if (!wrap) return;
+
+  if (!canUseServer()) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'flex';
+
+  const on = cb && cb.checked;
+  label.textContent = on ? 'Claude AI' : 'Offline';
+  if (serverOk === true)       { dot.className = 'ok';  dot.title = 'Claude API reachable'; }
+  else if (serverOk === false) { dot.className = 'bad'; dot.title = 'Claude API unavailable'; }
+  else                         { dot.className = '';    dot.title = ''; }
+}
+
+// Returns true if rawHtml contains canvas-rendered page images (PDF or Word COM path)
+async function runDetection() {
+  showOverlay('Detecting fields…');
+  document.getElementById('btn-detect').disabled = true;
+
+  try {
+    let fields;
+    let usedAI = false;
+
+    if (canUseServer() && aiToggleEnabled()) {
+      showOverlay('Sending to Claude AI for field detection…');
+      const res = await fetch('/api/detect-fields', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: state.rawHtml }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        updateAiToggleUI(false);
+        hideOverlay();
+        document.getElementById('btn-detect').disabled = false;
+        showAiError(data.error || `Server error ${res.status}`);
+        return;
+      }
+
+      fields = data.fields || [];
+      usedAI = true;
+      updateAiToggleUI(true);
+    } else {
+      showOverlay('Running offline field detection…');
+      await new Promise(r => setTimeout(r, 300));
+      fields = OfflineDetector.detect(state.rawHtml);
+    }
+
+    state.proposedFields = fields;
+    state.lastDetectionMode = usedAI ? 'ai' : 'offline';
+    hideOverlay();
+
+    if (fields.length === 0) {
+      toast('No fields detected. Try a document with blank fields (___) or "Label:" patterns.', 'error');
+      document.getElementById('btn-detect').disabled = false;
+      return;
+    }
+
+    openReview(fields);
+  } catch (err) {
+    hideOverlay();
+    updateAiToggleUI(false);
+    document.getElementById('btn-detect').disabled = false;
+    if (err.name === 'TypeError' && err.message.includes('fetch')) {
+      showAiError('Cannot reach server. Make sure server.js is running: node server.js');
+    } else {
+      toast('Detection failed: ' + err.message, 'error');
+    }
+    console.error(err);
+  }
+}
+
+function showAiError(msg) {
+  const d = document.createElement('div');
+  d.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;
+    display:flex;align-items:flex-start;justify-content:center;
+    padding:24px 16px;overflow-y:auto;
+  `;
+  d.innerHTML = `
+    <div style="background:#fff;border-radius:10px;padding:24px 28px;max-width:460px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);margin:auto;flex-shrink:0">
+      <div style="font-size:20px;font-weight:600;margin-bottom:10px">⚠️ Claude AI Unavailable</div>
+      <div style="color:#dc2626;font-size:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 12px;margin-bottom:14px;word-break:break-word;max-height:120px;overflow-y:auto">${msg}</div>
+      <p style="font-size:13px;color:#475569;margin:0 0 16px">
+        Switch to <strong>Offline mode</strong> to retry with pattern-based detection, or dismiss to stay on the current document.
+      </p>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button onclick="(function(btn){btn.closest('div[style]').remove();const cb=document.getElementById('ai-toggle-cb');if(cb){cb.checked=false;onAiToggleChange();}setTimeout(runDetection,50);})(this)"
+          style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:500">
+          Switch to Offline &amp; Retry
+        </button>
+        <button onclick="this.closest('div[style]').remove()"
+          style="background:#f1f5f9;color:#1e293b;border:1px solid #e2e8f0;border-radius:6px;padding:9px 18px;cursor:pointer;font-size:13px">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  `;
+  // clicking the backdrop also dismisses
+  d.addEventListener('click', e => { if (e.target === d) d.remove(); });
+  document.body.appendChild(d);
+}
+
+function showImagePdfWarning() {
+  const d = document.createElement('div');
+  d.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;
+    display:flex;align-items:flex-start;justify-content:center;
+    padding:24px 16px;overflow-y:auto;
+  `;
+  d.innerHTML = `
+    <div style="background:#fff;border-radius:10px;padding:24px 28px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);margin:auto">
+      <div style="font-size:20px;font-weight:600;margin-bottom:10px">🖼️ Scanned / Image PDF</div>
+      <p style="font-size:13px;color:#374151;margin:0 0 10px">
+        This PDF has no text layer — it is a scanned image. Fields were detected visually, but
+        <strong>injection requires actual text in the document</strong> to locate and replace.
+      </p>
+      <p style="font-size:13px;color:#374151;margin:0 0 18px">To create a fillable Leegality form from this document, use one of these instead:</p>
+      <ul style="font-size:13px;color:#374151;margin:0 0 18px;padding-left:20px;line-height:1.7">
+        <li>Upload the original <strong>DOCX</strong> source file</li>
+        <li>Upload a <strong>text-based PDF</strong> (not scanned)</li>
+        <li>Copy the document text into a <strong>TXT / HTML</strong> file and upload that</li>
+      </ul>
+      <div style="display:flex;justify-content:flex-end">
+        <button onclick="this.closest('div[style]').remove()"
+          style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:9px 20px;cursor:pointer;font-size:13px;font-weight:500">
+          OK
+        </button>
+      </div>
+    </div>
+  `;
+  d.addEventListener('click', e => { if (e.target === d) d.remove(); });
+  document.body.appendChild(d);
+}
+
+// ════════════════════════════════════════════════════════════════
+// OFFLINE DETECTOR  (no API — pattern-based field recognition)
+// ════════════════════════════════════════════════════════════════
+const OfflineDetector = {
+  _idBase: 1718880000000,
+  _idCounter: 0,
+
+  nextId() {
+    return String(this._idBase + (++this._idCounter));
+  },
+
+  detect(html) {
+    this._idCounter = 0;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<html><body>${html}</body></html>`, 'text/html');
+    const fields = [];
+
+    // 1. Existing leegality-* inputs (already-injected templates)
+    doc.querySelectorAll('input.leegality-textbox, input.leegality-checkbox, input.leegality-radio, select.leegality-select').forEach(inp => {
+      const name = inp.getAttribute('name') || 'Field';
+      const type = inp.classList.contains('leegality-checkbox') ? 'checkbox'
+                 : inp.classList.contains('leegality-radio')    ? 'radio'
+                 : 'textbox';
+      const id = inp.getAttribute('id') || this.nextId();
+      fields.push(this._makeField(type, name, inp.outerHTML, 'Existing leegality field', {
+        method: 'replace', position: null,
+        target: inp.outerHTML.slice(0, 80), anchorText: name, targetElementId: ''
+      }));
+    });
+
+    if (fields.length > 0) return fields; // Already a Leegality template
+
+    // 2. Scan tables for blank cells and label: patterns
+    const tables = [...doc.querySelectorAll('table')];
+    tables.forEach((table, tableIndex) => {
+      const grid = this._buildGrid(table);
+      grid.forEach((row, rowIndex) => {
+        row.forEach((cell, colIndex) => {
+          if (!cell || cell.spanned) return;
+          const el = cell.el;
+          const text = el.textContent.trim();
+
+          // 2a. Empty cell
+          if (!text) {
+            // Try to infer name from header cell in same column or previous sibling
+            const name = this._inferNameFromHeader(grid, rowIndex, colIndex) || `Field ${fields.length + 1}`;
+            const id = this.nextId();
+            fields.push(this._makeField('textbox', name,
+              `<input class="leegality-textbox" id="${id}" name="${escAttr(name)}" type="text" pattern=".*\\S+.*" required>`,
+              `Empty cell in table[${tableIndex}] row[${rowIndex}] col[${colIndex}]`,
+              { method: 'replace', position: { tableIndex, rowIndex, columnIndex: colIndex }, target: '', anchorText: name, targetElementId: '' }
+            ));
+          }
+
+          // 2b. Underscores (5+) inside cell
+          if (/_____+/.test(text)) {
+            const name = this._labelBefore(el) || this._inferNameFromHeader(grid, rowIndex, colIndex) || `Field ${fields.length + 1}`;
+            const id = this.nextId();
+            const underscores = text.match(/_____+/)[0];
+            fields.push(this._makeField('textbox', name,
+              `<input class="leegality-textbox" id="${id}" name="${escAttr(name)}" type="text" pattern=".*\\S+.*" required>`,
+              `Underscore placeholder in table cell`,
+              { method: 'replace', position: { tableIndex, rowIndex, columnIndex: colIndex }, target: underscores, anchorText: text.slice(0, 40), targetElementId: '' }
+            ));
+          }
+
+          // 2c. Label: pattern (text ends with colon, cell is effectively a label → next sibling cell is blank)
+          if (/:\s*$/.test(text) && colIndex + 1 < row.length) {
+            const nextCell = row[colIndex + 1];
+            if (nextCell && !nextCell.spanned && !nextCell.el.textContent.trim()) {
+              const name = text.replace(/:.*$/, '').replace(/[*]/g, '').trim();
+              const id = this.nextId();
+              fields.push(this._makeField('textbox', name,
+                `<input class="leegality-textbox" id="${id}" name="${escAttr(name)}" type="text" pattern=".*\\S+.*" required>`,
+                `Label "${name}:" → adjacent blank cell`,
+                { method: 'replace', position: { tableIndex, rowIndex, columnIndex: colIndex + 1 }, target: '', anchorText: name, targetElementId: '' }
+              ));
+            }
+          }
+        });
+      });
+    });
+
+    // 3. Non-table: underscores, label: patterns, bracketed placeholders
+    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      // Skip inside tables (already handled)
+      if (node.parentElement.closest('table')) continue;
+
+      const text = node.textContent;
+
+      // 3a. Underscores
+      const underRe = /_{5,}/g;
+      let m;
+      while ((m = underRe.exec(text)) !== null) {
+        const name = this._labelBeforeNode(node) || `Field ${fields.length + 1}`;
+        const id = this.nextId();
+        fields.push(this._makeField('textbox', name,
+          `<input class="leegality-textbox" id="${id}" name="${escAttr(name)}" type="text">`,
+          `Underscore placeholder`,
+          { method: 'replace', position: null, target: m[0], anchorText: text.slice(Math.max(0, m.index - 30), m.index + 30).trim(), targetElementId: '' }
+        ));
+      }
+
+      // 3b. Bracketed placeholders: [Name], {{Name}}, {Name}, <Name>, «Name»
+      const bracketRe = /\[([^\]]{2,40})\]|\{\{([^}]{2,40})\}\}|\{([^}]{2,40})\}|«([^»]{2,40})»/g;
+      while ((m = bracketRe.exec(text)) !== null) {
+        const name = (m[1] || m[2] || m[3] || m[4]).trim();
+        if (/^https?:|^\d+$/.test(name)) continue; // skip URLs and numbers
+        const id = this.nextId();
+        fields.push(this._makeField('textbox', name,
+          `<input class="leegality-textbox" id="${id}" name="${escAttr(name)}" type="text">`,
+          `Bracketed placeholder`,
+          { method: 'replace', position: null, target: m[0], anchorText: text.slice(Math.max(0, m.index - 20), m.index + 30).trim(), targetElementId: '' }
+        ));
+      }
+
+      // 3c. Label: _____ or Label: (end of line)
+      const labelRe = /([A-Z][A-Za-z\s\/\(\)]{2,40}):\s*(_{5,}|$)/gm;
+      while ((m = labelRe.exec(text)) !== null) {
+        const name = m[1].trim();
+        // Skip if already detected
+        if (fields.some(f => f.fieldName === name)) continue;
+        // Skip signature-like
+        if (/sign|witness|stamp/i.test(name)) continue;
+        const id = this.nextId();
+        const target = m[2] ? m[2] : m[0]; // underscores or whole match
+        fields.push(this._makeField('textbox', name,
+          `<input class="leegality-textbox" id="${id}" name="${escAttr(name)}" type="text">`,
+          `Label pattern "${name}:"`,
+          { method: m[2] ? 'replace' : 'insertAfter', position: null, target, anchorText: m[0].trim(), targetElementId: '' }
+        ));
+      }
+    }
+
+    // Deduplicate by fieldName + target
+    const seen = new Set();
+    return fields.filter(f => {
+      const key = f.fieldName + '|' + f.injectionPoint.target;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  },
+
+  _makeField(fieldType, fieldName, html, insertionContext, injectionPoint) {
+    return { fieldType, fieldName, html, insertionContext, injectionPoint };
+  },
+
+  _buildGrid(table) {
+    const rows = [...table.querySelectorAll(':scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr')];
+    const grid = [];
+    rows.forEach((tr, ri) => {
+      if (!grid[ri]) grid[ri] = [];
+      let ci = 0;
+      [...tr.querySelectorAll(':scope > td, :scope > th')].forEach(td => {
+        while (grid[ri][ci]) ci++;
+        const rs = parseInt(td.getAttribute('rowspan') || '1');
+        const cs = parseInt(td.getAttribute('colspan') || '1');
+        for (let r = 0; r < rs; r++) for (let c = 0; c < cs; c++) {
+          if (!grid[ri+r]) grid[ri+r] = [];
+          grid[ri+r][ci+c] = { el: td, spanned: r>0||c>0 };
+        }
+        ci += cs;
+      });
+    });
+    return grid;
+  },
+
+  _inferNameFromHeader(grid, rowIndex, colIndex) {
+    // Look at row 0 (header row) for same column
+    if (grid[0] && grid[0][colIndex]) {
+      const txt = grid[0][colIndex].el.textContent.trim();
+      if (txt && rowIndex > 0) return txt;
+    }
+    // Look at first cell in same row (row header)
+    if (grid[rowIndex] && grid[rowIndex][0]) {
+      const txt = grid[rowIndex][0].el.textContent.trim();
+      if (txt && colIndex > 0) return txt;
+    }
+    return null;
+  },
+
+  _labelBefore(el) {
+    // Check previous sibling text or parent's text before this element
+    const prev = el.previousSibling;
+    if (prev && prev.nodeType === 3) {
+      const t = prev.textContent.trim().replace(/:$/, '');
+      if (t.length > 1) return t;
+    }
+    if (el.parentElement) {
+      const t = el.parentElement.textContent.trim().replace(el.textContent, '').replace(/:.*$/, '').trim();
+      if (t.length > 1 && t.length < 50) return t;
+    }
+    return null;
+  },
+
+  _labelBeforeNode(node) {
+    const text = node.textContent;
+    const beforeUnderscore = text.split(/_____+/)[0];
+    const labelMatch = beforeUnderscore.match(/([A-Za-z][A-Za-z\s\/\(\)]{1,35})[:\s]*$/);
+    if (labelMatch) return labelMatch[1].trim();
+    return null;
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+// REVIEW MODAL
+// ════════════════════════════════════════════════════════════════
+function openReview(fields) {
+  state.reviewStates = fields.map(f => ({
+    approved: true,
+    fieldName: f.fieldName,
+    fieldType: f.fieldType,
+    originalField: f,
+  }));
+
+  // Reset filter/search
+  const searchEl = document.getElementById('review-search');
+  const filterEl = document.getElementById('review-filter');
+  if (searchEl) searchEl.value = '';
+  if (filterEl) filterEl.value = 'all';
+
+  renderReviewCards();
+  document.getElementById('review-modal').classList.add('open');
+  updateReviewCount();
+
+  // Show detection mode badge inside review header
+  const tag = document.getElementById('review-mode-tag');
+  if (tag) {
+    if (state.lastDetectionMode === 'ai') {
+      tag.textContent = '☁ Detected by Claude AI';
+      tag.style.cssText = 'display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;background:#dbeafe;color:#1d4ed8;margin-top:4px';
+    } else {
+      tag.textContent = '⚡ Detected offline (pattern matching)';
+      tag.style.cssText = 'display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;background:#fef3c7;color:#92400e;margin-top:4px';
+    }
+  }
+}
+
+function renderReviewCards() {
+  const body = document.getElementById('review-body');
+  body.innerHTML = '';
+
+  state.reviewStates.forEach((rs, idx) => {
+    const f = rs.originalField;
+    const ip = f.injectionPoint;
+
+    const posStr = ip.method === 'overlay' && ip.bbox
+      ? `overlay p${ip.pageIndex||0} (${(ip.bbox.left*100).toFixed(1)}%, ${(ip.bbox.top*100).toFixed(1)}%) ${(ip.bbox.width*100).toFixed(1)}×${(ip.bbox.height*100).toFixed(1)}%`
+      : ip.position
+        ? `table[${ip.position.tableIndex}] row[${ip.position.rowIndex}] col[${ip.position.columnIndex}]`
+        : ip.targetElementId
+          ? `after #${ip.targetElementId}`
+          : `target: "${(ip.target || ip.anchorText || '').slice(0, 40)}"`;
+
+    const card = document.createElement('div');
+    card.className = 'review-card' + (rs.approved ? ' approved' : ' rejected');
+    card.dataset.idx = idx;
+
+    card.innerHTML = `
+      <div class="rc-left">
+        <div class="rc-top">
+          <span class="type-badge type-${f.fieldType}">${f.fieldType}</span>
+          <span style="font-size:12px;color:var(--text-muted);">${ip.method}</span>
+        </div>
+        <input class="rc-name-input" value="${escAttr(rs.fieldName)}" data-idx="${idx}" title="Edit field name">
+        <div class="rc-context">${escHtml(f.insertionContext || '')}</div>
+        <code class="rc-position">${escHtml(posStr)}</code>
+      </div>
+      <div class="rc-actions">
+        <button class="btn-approve${rs.approved ? ' active' : ''}" onclick="setReview(${idx}, true)" title="Approve">✓</button>
+        <button class="btn-reject${!rs.approved ? ' active' : ''}" onclick="setReview(${idx}, false)" title="Reject">✕</button>
+      </div>`;
+
+    // Name edit
+    card.querySelector('.rc-name-input').addEventListener('input', e => {
+      state.reviewStates[idx].fieldName = e.target.value;
+      // Save rename correction if changed
+      if (e.target.value !== f.fieldName) {
+        saveCorrection({
+          type: 'field_rename',
+          originalName: f.fieldName,
+          correctedName: e.target.value,
+          context: f.insertionContext || '',
+        });
+      }
+    });
+
+    body.appendChild(card);
+  });
+}
+
+function setReview(idx, approved) {
+  state.reviewStates[idx].approved = approved;
+  const card = document.querySelector(`.review-card[data-idx="${idx}"]`);
+  card.className = 'review-card ' + (approved ? 'approved' : 'rejected');
+  card.querySelector('.btn-approve').classList.toggle('active', approved);
+  card.querySelector('.btn-reject').classList.toggle('active', !approved);
+
+  if (!approved) {
+    const rs = state.reviewStates[idx];
+    saveCorrection({
+      type: 'field_reject',
+      fieldName: rs.fieldName,
+      context: rs.originalField.insertionContext || '',
+    });
+  }
+  updateReviewCount();
+}
+
+function approveAll() {
+  state.reviewStates.forEach((_, i) => setReview(i, true));
+}
+
+function rejectUnnamed() {
+  // Reject all fields whose name matches generic "FIELD N" pattern
+  const unnamed = /^field\s*\d+$/i;
+  let count = 0;
+  state.reviewStates.forEach((rs, i) => {
+    if (unnamed.test(rs.fieldName.trim())) {
+      setReview(i, false);
+      count++;
+    }
+  });
+  toast(count ? `Rejected ${count} unnamed field(s).` : 'No unnamed fields found.', count ? 'success' : '');
+}
+
+function filterReviewCards() {
+  const q = (document.getElementById('review-search').value || '').toLowerCase();
+  const filter = document.getElementById('review-filter').value;
+  document.querySelectorAll('.review-card').forEach(card => {
+    const idx = +card.dataset.idx;
+    const rs = state.reviewStates[idx];
+    const nameMatch = !q || rs.fieldName.toLowerCase().includes(q);
+    let filterMatch = true;
+    if (filter === 'approved') filterMatch = rs.approved;
+    else if (filter === 'rejected') filterMatch = !rs.approved;
+    else if (filter === 'unnamed') filterMatch = /^field\s*\d+$/i.test(rs.fieldName.trim());
+    card.style.display = (nameMatch && filterMatch) ? '' : 'none';
+  });
+}
+
+function updateReviewCount() {
+  const approved = state.reviewStates.filter(r => r.approved).length;
+  const total = state.reviewStates.length;
+  document.getElementById('review-count-info').textContent = `${approved} of ${total} approved`;
+  document.getElementById('review-subtitle').textContent =
+    `Approve, rename, or reject each proposed field before injection. (${total} detected)`;
+}
+
+function closeReview() {
+  document.getElementById('review-modal').classList.remove('open');
+}
+
+// ════════════════════════════════════════════════════════════════
+// INJECTION ENGINE
+// ════════════════════════════════════════════════════════════════
+function isImageOnlyDocument() {
+  // Returns true if the loaded doc is entirely image-based (scanned PDF canvas renders)
+  const iframe = document.getElementById('doc-iframe');
+  if (!iframe || !iframe.contentDocument) return false;
+  const body = iframe.contentDocument.body;
+  if (!body) return false;
+  const pages = body.querySelectorAll('.pdf-page');
+  if (!pages.length) return false;
+  // All pages are image-only if every .pdf-page has only <img> children (no text spans)
+  return Array.from(pages).every(p => {
+    const spans = p.querySelectorAll('span');
+    const imgs  = p.querySelectorAll('img');
+    return imgs.length > 0 && spans.length === 0;
+  });
+}
+
+function injectApproved() {
+  closeReview();
+
+  const toInject = state.reviewStates
+    .filter(rs => rs.approved)
+    .map(rs => {
+      const f = { ...rs.originalField };
+      if (rs.fieldName !== f.fieldName) {
+        f.html = f.html.replace(/name="[^"]*"/, `name="${escAttr(rs.fieldName)}"`);
+        f.fieldName = rs.fieldName;
+      }
+      return f;
+    });
+
+  if (toInject.length === 0) {
+    toast('No fields approved for injection.', 'error');
+    return;
+  }
+
+  const { html, results } = InjectionEngine.injectAll(state.rawHtml, toInject);
+  state.injectedHtml = html;
+
+  // Show failures
+  const failed = results.filter(r => !r.success);
+  if (failed.length) {
+    const banner = document.getElementById('failed-banner');
+    const list   = document.getElementById('failed-list');
+    banner.style.display = 'block';
+    list.innerHTML = failed.map(r =>
+      `<div class="failed-item">
+        <span class="fi-name">${escHtml(r.fieldName)}</span>
+        <span class="fi-err">→ ${escHtml(r.error)}</span>
+      </div>`
+    ).join('');
+
+    // Save injection failures as corrections
+    failed.forEach(r => {
+      saveCorrection({
+        type: 'injection_failure',
+        fieldName: r.fieldName,
+        error: r.error,
+        target: r.injectionPoint?.target || '',
+        anchorText: r.injectionPoint?.anchorText || '',
+      });
+    });
+  } else {
+    document.getElementById('failed-banner').style.display = 'none';
+  }
+
+  const ok = results.filter(r => r.success).length;
+  loadIframe(state.injectedHtml);
+  toast(`Injected ${ok} field${ok !== 1 ? 's' : ''}${failed.length ? `, ${failed.length} failed` : ''}.`,
+    failed.length ? 'warning' : 'success');
+  document.getElementById('btn-export').disabled = false;
+}
+
+// ── Virtual-grid injection engine ─────────────────────────────────────────────
+const InjectionEngine = {
+  injectAll(html, fields) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<!DOCTYPE html><html><body>${html}</body></html>`, 'text/html');
+    const results = [];
+
+    // Process standalone (no targetElementId) first, then chained
+    const standalone = fields.filter(f => !f.injectionPoint.targetElementId);
+    const chained    = fields.filter(f =>  f.injectionPoint.targetElementId);
+
+    for (const f of [...standalone, ...chained]) {
+      const r = this.injectOne(doc, f);
+      results.push({ ...f, ...r });
+    }
+
+    return { html: doc.body.innerHTML, results };
+  },
+
+  injectOne(doc, field) {
+    const ip = field.injectionPoint;
+    try {
+      // ── Chained insertAfter (inline radio/checkbox groups) ──
+      if (ip.targetElementId) {
+        const prev = doc.getElementById(ip.targetElementId);
+        if (!prev) throw new Error(`Previous element #${ip.targetElementId} not found`);
+        prev.insertAdjacentHTML('afterend', field.html);
+        return { success: true };
+      }
+
+      let targetEl;
+
+      if (ip.position) {
+        // ── Table field via virtual grid ──
+        targetEl = this.getTableCell(doc, ip.position);
+        if (!targetEl) throw new Error(
+          `No cell found at table[${ip.position.tableIndex}] row[${ip.position.rowIndex}] col[${ip.position.columnIndex}]`
+        );
+      } else {
+        // ── Non-table field via text search ──
+        targetEl = this.findByText(doc, ip.target, ip.anchorText);
+        if (!targetEl) throw new Error(
+          `Target text not found: "${(ip.target || ip.anchorText || '').slice(0, 60)}"`
+        );
+      }
+
+      if (ip.method === 'replace') {
+        const t = (ip.target || '').trim();
+        if (!t) {
+          targetEl.innerHTML = field.html;
+        } else {
+          // Try replacing in found element first
+          if (!this.replaceText(targetEl, ip.target, field.html)) {
+            // Fallback 1: try whole-body innerHTML replace
+            if (!this.replaceInBody(doc, ip.target, field.html)) {
+              // Fallback 2: append to found element
+              targetEl.innerHTML += field.html;
+            }
+          }
+        }
+      } else if (ip.method === 'insertAfter') {
+        if (ip.position) {
+          targetEl.innerHTML += field.html;
+        } else {
+          this.insertAfterTarget(doc, ip.target || ip.anchorText, field.html, targetEl);
+        }
+      } else if (ip.method === 'insertBefore') {
+        // Guard: only insertBefore if the target looks like a blank/placeholder,
+        // not pre-printed content. If target is real content text (no underscores,
+        // no brackets) and longer than 30 chars, fall back to insertAfter instead.
+        const tgt = (ip.target || '').trim();
+        const looksLikeBlank = !tgt || /_{3,}|\[.+\]|\{.+\}|«.+»/.test(tgt) || tgt.length < 30;
+        if (looksLikeBlank) {
+          targetEl.insertAdjacentHTML('beforebegin', field.html);
+        } else {
+          // Safer: insert after the target text node instead of before the whole element
+          this.insertAfterTarget(doc, tgt, field.html, targetEl);
+        }
+      }
+
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  // ── Virtual grid builder ────────────────────────────────────────────────────
+  getTableCell(doc, pos) {
+    const tables = doc.querySelectorAll('table');
+    const table  = tables[pos.tableIndex];
+    if (!table) return null;
+
+    const grid = this.buildGrid(table);
+    const row  = grid[pos.rowIndex];
+    if (!row) return null;
+
+    const cell = row[pos.columnIndex];
+    if (!cell || cell.spanned) return null;
+
+    return cell.el;
+  },
+
+  buildGrid(table) {
+    // Only direct-child rows (handles thead/tbody/tfoot transparently)
+    const rows = [...table.querySelectorAll(':scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr')];
+    const grid = [];
+
+    rows.forEach((tr, ri) => {
+      if (!grid[ri]) grid[ri] = [];
+      let ci = 0;
+
+      [...tr.querySelectorAll(':scope > td, :scope > th')].forEach(td => {
+        // Skip occupied slots
+        while (grid[ri][ci]) ci++;
+
+        const rs = parseInt(td.getAttribute('rowspan') || '1');
+        const cs = parseInt(td.getAttribute('colspan') || '1');
+
+        for (let r = 0; r < rs; r++) {
+          for (let c = 0; c < cs; c++) {
+            if (!grid[ri + r]) grid[ri + r] = [];
+            grid[ri + r][ci + c] = { el: td, spanned: r > 0 || c > 0 };
+          }
+        }
+        ci += cs;
+      });
+    });
+    return grid;
+  },
+
+  // ── Text search ─────────────────────────────────────────────────────────────
+  findByText(doc, target, anchor) {
+    const search = (target || '').trim() || (anchor || '').trim();
+    if (!search) return null;
+
+    const candidates = [...doc.body.querySelectorAll(
+      'td, th, p, div, span, li, h1, h2, h3, h4, h5, h6, strong, em, b, i, u'
+    )];
+
+    // 1. Prefer smallest element whose textContent contains the search string
+    let best = null, bestLen = Infinity;
+    for (const el of candidates) {
+      const txt = el.textContent;
+      if (txt.includes(search) && txt.length < bestLen) {
+        best = el; bestLen = txt.length;
+      }
+    }
+    if (best) return best;
+
+    // 2. Fallback: innerHTML contains (handles HTML-entity variants)
+    for (const el of candidates) {
+      if (el.innerHTML.includes(search) && el.innerHTML.length < bestLen) {
+        best = el; bestLen = el.innerHTML.length;
+      }
+    }
+    if (best) return best;
+
+    // 3. Fuzzy: match ignoring whitespace differences (handles split text nodes)
+    const normSearch = search.replace(/\s+/g, '');
+    for (const el of candidates) {
+      if (el.textContent.replace(/\s+/g, '').includes(normSearch) && el.textContent.length < bestLen) {
+        best = el; bestLen = el.textContent.length;
+      }
+    }
+    return best;
+  },
+
+  // Replace target inside el — handles both plain text and HTML-tag targets
+  replaceText(el, target, fieldHtml) {
+    if (!target) return false;
+
+    // If target contains HTML tags, do an innerHTML string replacement
+    if (target.includes('<') || target.includes('&')) {
+      if (el.innerHTML.includes(target)) {
+        el.innerHTML = el.innerHTML.replace(target, fieldHtml);
+        return true;
+      }
+      // Try normalised (collapse whitespace)
+      const normTarget = target.replace(/\s+/g, ' ').trim();
+      const normInner  = el.innerHTML.replace(/\s+/g, ' ');
+      if (normInner.includes(normTarget)) {
+        el.innerHTML = normInner.replace(normTarget, fieldHtml);
+        return true;
+      }
+      return false;
+    }
+
+    // Plain-text target — walk text nodes
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walk.nextNode())) {
+      const idx = node.textContent.indexOf(target);
+      if (idx !== -1) {
+        const before = node.textContent.slice(0, idx);
+        const after  = node.textContent.slice(idx + target.length);
+        const frag   = document.createDocumentFragment();
+        if (before) frag.appendChild(document.createTextNode(before));
+        const tmp = document.createElement('span');
+        tmp.innerHTML = fieldHtml;
+        while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+        if (after) frag.appendChild(document.createTextNode(after));
+        node.parentNode.replaceChild(frag, node);
+        return true;
+      }
+    }
+    return false;
+  },
+
+  // Whole-body innerHTML search-and-replace — last resort for split text nodes
+  replaceInBody(doc, target, fieldHtml) {
+    if (!target || !target.trim()) return false;
+    const body = doc.body;
+
+    // Try exact match in innerHTML
+    if (body.innerHTML.includes(target)) {
+      body.innerHTML = body.innerHTML.replace(target, fieldHtml);
+      return true;
+    }
+
+    // Try with collapsed whitespace
+    const normTarget = target.replace(/\s+/g, ' ').trim();
+    const normBody   = body.innerHTML.replace(/\s+/g, ' ');
+    if (normBody.includes(normTarget)) {
+      // Rebuild with original whitespace structure
+      const re = new RegExp(normTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), '');
+      body.innerHTML = body.innerHTML.replace(/\s+/g, ' ').replace(re, fieldHtml);
+      return true;
+    }
+
+    // Try stripping HTML tags from target and searching plain text
+    const plainTarget = target.replace(/<[^>]+>/g, '').trim();
+    if (plainTarget && plainTarget.length > 3) {
+      const walk = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walk.nextNode())) {
+        if (node.textContent.includes(plainTarget)) {
+          const idx = node.textContent.indexOf(plainTarget);
+          const before = node.textContent.slice(0, idx);
+          const after  = node.textContent.slice(idx + plainTarget.length);
+          const frag   = document.createDocumentFragment();
+          if (before) frag.appendChild(document.createTextNode(before));
+          const tmp = document.createElement('span');
+          tmp.innerHTML = fieldHtml;
+          while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+          if (after) frag.appendChild(document.createTextNode(after));
+          node.parentNode.replaceChild(frag, node);
+          return true;
+        }
+      }
+    }
+    return false;
+  },
+
+  insertAfterTarget(doc, target, fieldHtml, fallbackEl) {
+    if (target && target.trim()) {
+      // HTML target — find element whose innerHTML contains it
+      if (target.includes('<')) {
+        const all = [...doc.body.querySelectorAll('*')];
+        for (const el of all) {
+          if (el.children.length === 0 && el.innerHTML.includes(target)) {
+            el.innerHTML = el.innerHTML.replace(target, target + fieldHtml);
+            return;
+          }
+        }
+      }
+      // Plain text target — walk text nodes
+      const walk = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walk.nextNode())) {
+        if (node.textContent.includes(target.trim())) {
+          const span = document.createElement('span');
+          span.innerHTML = fieldHtml;
+          node.parentNode.insertBefore(span, node.nextSibling);
+          return;
+        }
+      }
+    }
+    if (fallbackEl) fallbackEl.innerHTML += fieldHtml;
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+// EXPORT
+// ════════════════════════════════════════════════════════════════
+function exportHtml() {
+  closeExportMenu();
+  const source = state.injectedHtml || state.rawHtml;
+  if (!source) { toast('No document loaded.', 'error'); return; }
+
+  const filled = inlineFieldValues(source, state.fieldValues);
+  const full   = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n${IFRAME_STYLE}\n</head>\n<body>\n${filled}\n</body>\n</html>`;
+
+  downloadBlob(full, 'text/html', state.fileName.replace(/\.[^.]+$/, '_filled.html'));
+  toast('HTML exported with injected fields.', 'success');
+}
+
+// Inline current field values into an HTML string before saving
+function inlineFieldValues(html, values) {
+  if (!values || !Object.keys(values).length) return html;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<html><body>${html}</body></html>`, 'text/html');
+
+  doc.querySelectorAll('input[name]').forEach(inp => {
+    const val = values[inp.getAttribute('name')];
+    if (val === undefined) return;
+    inp.setAttribute('value', val);
+    if (inp.type === 'checkbox' || inp.type === 'radio') {
+      if (val) inp.setAttribute('checked', ''); else inp.removeAttribute('checked');
+    }
+  });
+
+  doc.querySelectorAll('select[name]').forEach(sel => {
+    const val = values[sel.getAttribute('name')];
+    if (val === undefined) return;
+    [...sel.options].forEach(opt => {
+      if (opt.value === val) opt.setAttribute('selected', '');
+      else opt.removeAttribute('selected');
+    });
+  });
+
+  return doc.body.innerHTML;
+}
+
+function downloadBlob(content, mime, filename) {
+  const blob = new Blob([content], { type: mime });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportPrint() {
+  closeExportMenu();
+  document.getElementById('doc-frame').contentWindow.print();
+}
+
+// Save injected HTML (with fields) as .txt — ready for Leegality upload
+function exportAsTxt() {
+  closeExportMenu();
+  const html = state.injectedHtml || state.rawHtml;
+  if (!html) { toast('No document loaded.', 'error'); return; }
+  const normalized = normalizeLeegalityFields(html);
+  const wrapped    = wrapInLeegalityMargin(normalized);
+  downloadTxt(wrapped, state.fileName.replace(/\.[^.]+$/, '_leegality.txt'));
+  toast('Saved as Leegality TXT with correct field format.', 'success');
+}
+
+// Wrap content in the Leegality pageMargin div that the platform expects
+function wrapInLeegalityMargin(html) {
+  // Don't double-wrap
+  if (html.includes('leegality-margin-division')) return html;
+  return `<div class="pageMargin" id="leegality-margin-division" margin-bottom="68" margin-left="48" margin-right="48" margin-top="100" style="margin-top:100px;margin-bottom:68px;margin-left:48px;margin-right:48px">
+<leegality-margin-division id="leegality-margin" margin-bottom="68" margin-left="48" margin-right="48" margin-top="100"></leegality-margin-division>
+${html}
+</div>`;
+}
+
+// Full Leegality normalisation pass — runs on every TXT export.
+// 1. Fix field HTML (type, id, placeholder, pattern)
+// 2. Fix table cell structure (<p> → <div style="line-height:1">)
+// 3. Ensure table attributes match Leegality's expected format
+function normalizeLeegalityFields(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<body>${html}</body>`, 'text/html');
+  let idCounter = Date.now(); // start at current timestamp
+
+  // ── 1. Fix field HTML ──────────────────────────────────────────
+  doc.querySelectorAll('input.leegality-textbox').forEach(inp => {
+    inp.setAttribute('type', 'text');
+    const id = inp.getAttribute('id') || '';
+    if (!id || id.length < 10) inp.setAttribute('id', String(idCounter++));
+    inp.removeAttribute('placeholder');
+    if (inp.hasAttribute('required')) {
+      inp.setAttribute('pattern', '.*\\S+.*');
+      inp.setAttribute('required', '');
+    }
+  });
+
+  doc.querySelectorAll('input.leegality-checkbox, input.leegality-radio').forEach(inp => {
+    const id = inp.getAttribute('id') || '';
+    if (!id || id.length < 10) {
+      const newId = String(idCounter++);
+      inp.setAttribute('id', newId);
+      const lbl = inp.nextElementSibling;
+      if (lbl && lbl.tagName === 'LABEL') lbl.setAttribute('for', newId);
+    }
+    inp.removeAttribute('placeholder');
+  });
+
+  // ── 2. Normalise table structure ─────────────────────────────
+  doc.querySelectorAll('table').forEach(t => {
+    if (!t.getAttribute('border')) t.setAttribute('border', '1');
+    if (!t.getAttribute('cellpadding')) t.setAttribute('cellpadding', '1');
+    t.style.borderCollapse = 'collapse';
+    t.style.width = '100%';
+    if (t.style.margin) t.style.removeProperty('margin');
+  });
+
+  // ── 3. Fix cell structure: <p> → <div style="line-height:1"> ─
+  doc.querySelectorAll('td, th').forEach(cell => {
+    // Replace each <p> with a line-height:1 div
+    Array.from(cell.querySelectorAll('p')).forEach(p => {
+      const isEmpty = !p.textContent.trim() && !p.querySelector('img, input, select');
+      if (isEmpty) { p.remove(); return; }
+      const div = doc.createElement('div');
+      div.setAttribute('style', 'line-height:1');
+      div.innerHTML = p.innerHTML;
+      p.replaceWith(div);
+    });
+
+    // If cell still has no line-height div, wrap bare content
+    const hasWrapper = !!cell.querySelector(':scope > div[style*="line-height"]');
+    if (!hasWrapper) {
+      const inner = cell.innerHTML.trim();
+      if (inner) cell.innerHTML = `<div style="line-height:1">${inner}</div>`;
+    }
+
+    // Ensure cellpadding-like padding on the cell itself
+    if (!cell.style.padding) cell.style.padding = '4px 6px';
+  });
+
+  // ── 4. Remove top-level empty <p> between tables ─────────────
+  doc.querySelectorAll('body > p, body > div > p').forEach(p => {
+    if (!p.textContent.trim() && !p.querySelector('img, input')) p.remove();
+  });
+
+  // ── 5. Serialize with self-closing input tags ─────────────────
+  let result = doc.body.innerHTML;
+  result = result.replace(/<(input[^>]*)><\/input>/gi, '<$1 />');
+  result = result.replace(/<(input(?:[^>](?!\/))*[^/])>/gi, '<$1 />');
+  return result;
+}
+
+// Save raw converted HTML (before injection) as .txt — for re-use / inspection
+function exportRawTxt() {
+  closeExportMenu();
+  if (!state.rawHtml) { toast('No document loaded.', 'error'); return; }
+  downloadTxt(state.rawHtml, state.fileName.replace(/\.[^.]+$/, '_converted.txt'));
+  toast('Raw converted HTML saved as TXT.', 'success');
+}
+
+function downloadTxt(content, filename) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function toggleExportMenu() {
+  document.getElementById('export-menu').classList.toggle('open');
+}
+function closeExportMenu() {
+  document.getElementById('export-menu').classList.remove('open');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.export-wrap')) closeExportMenu();
+});
+
+// ════════════════════════════════════════════════════════════════
+// CORRECTIONS  (few-shot learning)
+// ════════════════════════════════════════════════════════════════
+function saveCorrection(data) {
+  fetch('/api/save-correction', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).catch(e => console.warn('Could not save correction:', e.message));
+}
+
+// ════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ════════════════════════════════════════════════════════════════
+function showApp() {
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  updateAiToggleUI(); // show/hide toggle based on protocol
+
+  // Ping server to check if Claude API is healthy
+  if (canUseServer()) {
+    fetch('/api/corrections')
+      .then(r => r.ok ? updateAiToggleUI(true) : updateAiToggleUI(false))
+      .catch(() => {
+        updateAiToggleUI(false);
+        // Server unreachable — auto-disable AI toggle
+        const cb = document.getElementById('ai-toggle-cb');
+        if (cb) cb.checked = false;
+        onAiToggleChange();
+        toast('Server not running — switched to Offline mode. Start server.js to use Claude AI.', 'warning');
+      });
+  }
+}
+function resetToUpload() {
+  document.getElementById('upload-screen').style.display = '';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('doc-frame').srcdoc = '';
+  document.getElementById('fields-list').innerHTML =
+    '<div class="no-fields">Upload a document and run field detection to see fillable fields here.</div>';
+  document.getElementById('panel-count').textContent = '0';
+  document.getElementById('btn-detect').disabled = true;
+  document.getElementById('btn-export').disabled = true;
+  document.getElementById('failed-banner').style.display = 'none';
+  document.getElementById('filename-chip').textContent = 'No file';
+  Object.assign(state, { fileName: '', rawHtml: '', previewHtml: '', injectedHtml: '', proposedFields: [], fieldValues: {}, reviewStates: [] });
+  fileInput.value = '';
+}
+function showOverlay(msg) {
+  document.getElementById('detect-msg').textContent = msg;
+  document.getElementById('detect-overlay').classList.add('visible');
+}
+function hideOverlay() {
+  document.getElementById('detect-overlay').classList.remove('visible');
+}
+
+let toastTimer;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3500);
+}
+
+function escAttr(s) {
+  return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE SELECTOR  (HTML-section based)
+// ════════════════════════════════════════════════════════════════
+// Split rawHtml into logical sections by H1 headings.
+// Returns [{ title, html, index }]
+function splitIntoSections(html) {
+  const parser = new DOMParser();
+  const doc    = parser.parseFromString(`<body>${html}</body>`, 'text/html');
+  const body   = doc.body;
+
+  // Unwrap one wrapper div if present (pdf-form or similar)
+  const topChildren = Array.from(body.children);
+  const root = (topChildren.length === 1 && topChildren[0].tagName === 'DIV')
+    ? topChildren[0]
+    : body;
+  const children = Array.from(root.children);
+
+  const sections = [];
+  let current = { title: 'Introduction', nodes: [] };
+
+  for (const el of children) {
+    // DOCX: split on <h1>
+    const isH1 = el.tagName === 'H1';
+    // PDF: split on section header divs
+    const isPdfHeader = el.classList && el.classList.contains('pdf-section-header');
+
+    if (isH1 || isPdfHeader) {
+      if (current.nodes.length > 0) sections.push(current);
+      current = { title: el.textContent.trim().slice(0, 60) || 'Section', nodes: [el] };
+    } else {
+      current.nodes.push(el);
+    }
+  }
+  if (current.nodes.length > 0) sections.push(current);
+  if (!sections.length) sections.push({ title: 'Full Document', nodes: children });
+
+  return sections.map((s, i) => ({
+    index: i,
+    title: s.title || `Section ${i + 1}`,
+    html: s.nodes.map(n => n.outerHTML).join('\n'),
+  }));
+}
+
+const pageSelector = {
+  sections: [],        // [{ index, title, html }]
+  selected: new Set(),
+  activeSection: 0,
+  sectionInstructions: {},
+
+  open() {
+    this.sections = splitIntoSections(state.rawHtml);
+    if (!this.sections.length) {
+      // Treat the whole document as one section so the options screen still shows
+      this.sections = [{ index: 0, title: state.fileName || 'Full Document', html: state.rawHtml }];
+    }
+    this.selected = new Set(this.sections.map(s => s.index));
+    this.activeSection = 0;
+    this.sectionInstructions = {};
+    document.getElementById('ps-doc-type').value = '';
+    document.getElementById('ps-extra').value = '';
+    document.getElementById('ps-page-inst').value = '';
+    document.getElementById('ps-title').textContent = state.fileName || 'Select Sections to Process';
+    this._buildUI();
+    document.getElementById('page-selector-modal').classList.add('open');
+  },
+
+  close() {
+    this._saveSectionInst();
+    document.getElementById('page-selector-modal').classList.remove('open');
+  },
+
+  _buildUI() {
+    const list = document.getElementById('ps-sidebar-list');
+    list.innerHTML = '';
+    this.sections.forEach(s => {
+      const el = document.createElement('div');
+      el.className = 'ps-section-item' + (s.index === 0 ? ' active' : '');
+      el.dataset.si = s.index;
+
+      // Scale factor for thumbnail iframe (820px doc width → 178px visible)
+      const scale = 178 / 820;
+
+      el.innerHTML = `
+        <input type="checkbox" checked onclick="event.stopPropagation();pageSelector._toggle(${s.index},this.checked)">
+        <div style="flex:1;min-width:0">
+          <div class="ps-section-label">${escHtml(s.title)}</div>
+          <div class="ps-thumb-frame-wrap">
+            <iframe srcdoc="${escAttr('<!DOCTYPE html><html><head><meta charset=UTF-8><style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.5;margin:8px 12px;color:#000;background:#fff;}table{border-collapse:collapse;width:100%;}td,th{border:1px solid #000;padding:3pt 4pt;font-size:10pt;}h1{font-size:11pt;font-weight:bold;text-transform:uppercase;margin:6pt 0 3pt;}p{margin:2pt 0;text-align:justify;}input{border:none;border-bottom:1px solid #333;background:transparent;min-width:60px;font-size:inherit;}</style></head><body>' + s.html.replace(/"/g, '&quot;') + '</body></html>')}"
+              style="transform:scale(${scale});transform-origin:top left;width:820px;height:600px;border:none;pointer-events:none;"></iframe>
+          </div>
+        </div>`;
+      el.addEventListener('click', () => this._selectSection(s.index));
+      list.appendChild(el);
+    });
+    this._updateCounter();
+    this._selectSection(0);
+    document.getElementById('ps-detect-btn').disabled = false;
+  },
+
+  _toggle(index, checked) {
+    if (checked) this.selected.add(index);
+    else this.selected.delete(index);
+    this._updateCounter();
+    document.getElementById('ps-detect-btn').disabled = this.selected.size === 0;
+  },
+
+  _selectSection(index) {
+    this._saveSectionInst();
+    this.activeSection = index;
+    document.querySelectorAll('.ps-section-item').forEach(el =>
+      el.classList.toggle('active', +el.dataset.si === index));
+    const s = this.sections[index];
+    const frame = document.getElementById('ps-preview-frame');
+    const empty = document.getElementById('ps-preview-empty');
+    if (s) {
+      const fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8">${this._previewStyle()}</head><body>${s.html}</body></html>`;
+      frame.srcdoc = fullHtml;
+      frame.style.display = '';
+      empty.classList.remove('visible');
+    } else {
+      frame.style.display = 'none';
+      empty.classList.add('visible');
+    }
+    document.getElementById('ps-section-inst-label').textContent = `"${(s && s.title) || 'Section'}" instructions`;
+    document.getElementById('ps-page-inst').value = this.sectionInstructions[index] || '';
+  },
+
+  _previewStyle() {
+    return `<style>
+      *{box-sizing:border-box;}
+      body{font-family:Arial,sans-serif;font-size:9pt;line-height:1.5;margin:12px;color:#000;background:#fff;}
+      /* DOCX styles */
+      h1{font-size:10pt;font-weight:bold;text-transform:uppercase;margin:8pt 0 3pt;}
+      h2{font-size:10pt;font-weight:bold;margin:6pt 0 3pt;}
+      p{margin:2pt 0;text-align:justify;}
+      ul,ol{padding-left:20pt;margin:3pt 0;}li{margin-bottom:1pt;}
+      strong,b{font-weight:bold;}em,i{font-style:italic;}u{text-decoration:underline;}
+      /* Shared table */
+      table{border-collapse:collapse;width:100%;margin:4pt 0;}
+      td,th{border:1px solid #bbb;padding:3pt 5pt;font-size:9pt;vertical-align:top;word-break:break-word;}
+      /* PDF injection HTML */
+      .pdf-form{padding:0;width:100%;}
+      .pdf-section-header{background:#1a1a1a;color:#fff;font-weight:bold;padding:4px 7px;font-size:9pt;margin:8px 0 0;}
+      /* Leegality fields */
+      input.leegality-textbox{border:none;border-bottom:1.5px solid #2563eb;background:transparent;min-width:60px;font-size:inherit;font-family:inherit;outline:none;padding:1px 2px;}
+      input.leegality-checkbox,input.leegality-radio{accent-color:#2563eb;width:13px;height:13px;}
+    </style>`;
+  },
+
+  _saveSectionInst() {
+    const val = (document.getElementById('ps-page-inst') || {}).value || '';
+    if (val.trim()) this.sectionInstructions[this.activeSection] = val.trim();
+    else delete this.sectionInstructions[this.activeSection];
+  },
+
+  _updateCounter() {
+    document.getElementById('ps-counter').textContent =
+      `${this.selected.size} of ${this.sections.length} sections selected`;
+  },
+
+  selectAll() {
+    this.sections.forEach(s => {
+      this.selected.add(s.index);
+      const cb = document.querySelector(`.ps-section-item[data-si="${s.index}"] input`);
+      if (cb) cb.checked = true;
+    });
+    this._updateCounter();
+    document.getElementById('ps-detect-btn').disabled = false;
+  },
+
+  clearAll() {
+    this.selected.clear();
+    document.querySelectorAll('.ps-section-item input[type="checkbox"]').forEach(cb => cb.checked = false);
+    this._updateCounter();
+    document.getElementById('ps-detect-btn').disabled = true;
+  },
+
+  getConfig() {
+    this._saveSectionInst();
+    return {
+      selected: [...this.selected].sort((a, b) => a - b),
+      documentType: document.getElementById('ps-doc-type').value.trim(),
+      extraInstructions: document.getElementById('ps-extra').value.trim(),
+      sectionInstructions: { ...this.sectionInstructions },
+      model: document.getElementById('ps-model').value,
+      continuityPass: document.getElementById('ps-continuity').checked,
+    };
+  },
+};
+
+// ── Detection Mode Modal ─────────────────────────────────────────
+let _detectMode = 'ai'; // 'ai' | 'offline'
+
+function openModeModal() {
+  // Default to AI if server available, otherwise offline
+  selectDetectMode(canUseServer() ? 'ai' : 'offline');
+  document.getElementById('detect-mode-modal').classList.add('open');
+}
+
+function closeModeModal() {
+  document.getElementById('detect-mode-modal').classList.remove('open');
+}
+
+function selectDetectMode(mode) {
+  _detectMode = mode;
+  document.getElementById('dm-card-ai').classList.toggle('selected', mode === 'ai');
+  document.getElementById('dm-card-offline').classList.toggle('selected', mode === 'offline');
+}
+
+async function runDetectionFromModal() {
+  closeModeModal();
+  const cb = document.getElementById('ai-toggle-cb');
+  if (_detectMode === 'ai' && canUseServer()) {
+    if (cb) cb.checked = true;
+    // pageSelector.open() will split sections; if none it runs detection directly
+    pageSelector.open();
+  } else {
+    if (cb) cb.checked = false;
+    document.getElementById('btn-detect').disabled = true;
+    runDetection();
+  }
+}
+
+function closePageSelector() {
+  pageSelector.close();
+  // For PDFs restore the canvas preview; for DOCX rawHtml is the display
+  loadIframe(state.previewHtml || state.rawHtml);
+  document.getElementById('btn-detect').disabled = false;
+}
+function psSelectAll() { pageSelector.selectAll(); }
+function psClearAll()  { pageSelector.clearAll(); }
+
+async function runDetectionWithSelection() {
+  const config = pageSelector.getConfig();
+  if (!config.selected.length) { toast('Select at least one section.', 'error'); return; }
+
+  pageSelector.close();
+  showOverlay('Preparing…');
+  document.getElementById('btn-detect').disabled = true;
+
+  try {
+    const sections = pageSelector.sections;
+    const total = config.selected.length;
+    const allFields = [];
+    const continuityContext = [];
+
+    for (let si = 0; si < config.selected.length; si++) {
+      const idx = config.selected[si];
+      const section = sections[idx];
+      if (!section) continue;
+
+      showOverlay(`Detecting fields: section ${si + 1} of ${total} ("${section.title}")…`);
+
+      const contextParts = [];
+      if (config.documentType) contextParts.push(`Document type: ${config.documentType}`);
+      if (config.extraInstructions) contextParts.push(`Extra instructions: ${config.extraInstructions}`);
+      if (config.sectionInstructions[idx]) contextParts.push(`Section-specific instructions: ${config.sectionInstructions[idx]}`);
+      if (config.continuityPass && continuityContext.length) {
+        contextParts.push(`Fields detected in previous sections (use consistent naming): ${continuityContext.slice(-30).join(', ')}`);
+      }
+
+      const htmlToSend = contextParts.length
+        ? `<!-- CONTEXT:\n${contextParts.join('\n')}\n-->\n${section.html}`
+        : section.html;
+
+      try {
+        const res = await fetch('/api/detect-fields', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ html: htmlToSend }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (si === 0) {
+            hideOverlay();
+            showAiError(data.error || `Detection error on section "${section.title}"`);
+            document.getElementById('btn-detect').disabled = false;
+            return;
+          }
+          console.warn(`Section "${section.title}" error:`, data.error);
+          continue;
+        }
+        const fields = data.fields || [];
+        allFields.push(...fields);
+        if (config.continuityPass) {
+          fields.forEach(f => { if (f.fieldName) continuityContext.push(f.fieldName); });
+        }
+      } catch (e) {
+        console.warn(`Section "${section.title}" fetch error:`, e.message);
+      }
+    }
+
+    state.proposedFields = allFields;
+    state.lastDetectionMode = 'ai';
+    loadIframe(state.rawHtml);
+    hideOverlay();
+    updateAiToggleUI(true);
+
+    if (!allFields.length) {
+      toast('No fields detected in the selected sections.', 'error');
+      document.getElementById('btn-detect').disabled = false;
+      return;
+    }
+    openReview(allFields);
+  } catch (err) {
+    hideOverlay();
+    updateAiToggleUI(false);
+    document.getElementById('btn-detect').disabled = false;
+    toast('Detection failed: ' + err.message, 'error');
+    console.error(err);
+  }
+}
+</script>
+</body>
+</html>

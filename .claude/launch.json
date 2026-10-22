@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "doc-form-filler",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:\\Users\\Lenovo\\Desktop\\DocFormFiller\\server.js"],
+      "port": 3001
+    }
+  ]
+}

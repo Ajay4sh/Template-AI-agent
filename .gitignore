@@ -1,0 +1,7 @@
+node_modules/
+.env
+tmp_docx/
+*.pdf
+*.docx
+corrections.json
+CONVERSATION_LOG.md
