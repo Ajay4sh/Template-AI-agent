@@ -33,7 +33,12 @@ function loadCorrections() {
 }
 
 function saveCorrections(list) {
-  fs.writeFileSync(CORRECTIONS_FILE, JSON.stringify(list, null, 2));
+  try {
+    fs.writeFileSync(CORRECTIONS_FILE, JSON.stringify(list, null, 2));
+  } catch (e) {
+    // Vercel has a read-only filesystem — corrections are in-memory only
+    console.warn('Could not persist corrections (read-only fs):', e.message);
+  }
 }
 
 function buildFewShotBlock(corrections) {
@@ -54,9 +59,12 @@ function buildFewShotBlock(corrections) {
   return `<previous-corrections>\nUse these past corrections to improve your field detection accuracy:\n${lines.join('\n')}\n</previous-corrections>\n\n`;
 }
 
-// ─── DOCX → PDF via Word COM ─────────────────────────────────────────────────
+// ─── DOCX → PDF via Word COM (Windows only — not available on Vercel) ────────
 
 app.post('/api/convert-to-pdf', (req, res) => {
+  if (process.platform !== 'win32') {
+    return res.status(501).json({ error: 'DOCX→PDF conversion is only available when running locally on Windows.' });
+  }
   const { docxBase64, filename } = req.body;
   if (!docxBase64) return res.status(400).json({ error: 'docxBase64 required' });
 
