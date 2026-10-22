@@ -148,13 +148,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 }
 
 #failed-banner {
-  display: none; background: #fef3c7; border-top: 2px solid var(--warning); padding: 10px 16px;
+  display: none; background: #fef3c7; border-top: 2px solid var(--warning);
   font-size: 13px; color: #92400e; flex-shrink: 0;
+  max-height: 25vh; display: none; flex-direction: column;
 }
-#failed-banner strong { font-weight: 600; }
-#failed-banner .failed-list { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+#failed-banner-header {
+  padding: 8px 16px 6px; display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid #f59e0b; flex-shrink: 0;
+}
+#failed-banner strong { font-weight: 600; font-size: 13px; }
+#failed-banner-count { font-size: 11px; color: #b45309; margin-left: 8px; }
+#failed-list-wrap { overflow-y: auto; flex: 1; padding: 6px 16px 8px; }
+#failed-banner .failed-list { display: flex; flex-direction: column; gap: 3px; }
 .failed-item { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; }
-.failed-item .fi-name { font-weight: 600; min-width: 120px; }
+.failed-item .fi-name { font-weight: 600; min-width: 120px; flex-shrink: 0; }
 .failed-item .fi-err { color: #b45309; }
 
 #detect-overlay {
@@ -487,10 +494,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         <div id="docx-pages-wrap"></div>
       </div>
 
-      <!-- Failed injection banner -->
+      <!-- Failed injection banner (max 25vh, scrollable) -->
       <div id="failed-banner">
-        <strong>⚠ Some fields could not be injected automatically:</strong>
-        <div class="failed-list" id="failed-list"></div>
+        <div id="failed-banner-header">
+          <span><strong>⚠ Some fields could not be injected automatically</strong><span id="failed-banner-count"></span></span>
+        </div>
+        <div id="failed-list-wrap">
+          <div class="failed-list" id="failed-list"></div>
+        </div>
       </div>
 
       <!-- Detection overlay -->
@@ -2246,7 +2257,8 @@ function injectApproved() {
   if (failed.length) {
     const banner = document.getElementById('failed-banner');
     const list   = document.getElementById('failed-list');
-    banner.style.display = 'block';
+    banner.style.display = 'flex';
+    document.getElementById('failed-banner-count').textContent = ` — ${failed.length} field${failed.length !== 1 ? 's' : ''}`;
     list.innerHTML = failed.map(r =>
       `<div class="failed-item">
         <span class="fi-name">${escHtml(r.fieldName)}</span>
