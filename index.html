@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Leegality Field Injector</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%232563eb'/><text x='16' y='22' font-size='18' text-anchor='middle' fill='white' font-family='Arial'>L</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -829,7 +830,9 @@ async function convertDocxFromBuffer(ab) {
     ignoreEmptyParagraphs: false,
     includeDefaultStyleMap: true,
   });
-  if (result.messages.length) console.log('mammoth warnings:', result.messages);
+  // Only log actual errors, not style-unrecognised warnings (expected for bank/govt form custom styles)
+  const errs = result.messages.filter(m => m.type === 'error');
+  if (errs.length) console.warn('mammoth errors:', errs);
 
   let html = result.value;
 
