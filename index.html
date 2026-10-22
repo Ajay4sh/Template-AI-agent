@@ -2799,7 +2799,12 @@ function resetToUpload() {
   document.getElementById('filename-chip').textContent = 'No file';
   Object.assign(state, { fileName: '', rawHtml: '', previewHtml: '', docxArrayBuffer: null, pdfPages: [], injectedHtml: '', docxVisualHtml: '', docxPreviewStyles: '', proposedFields: [], fieldValues: {}, reviewStates: [] });
   const docxContainer = document.getElementById('docx-preview-container');
-  if (docxContainer) { docxContainer.style.display = 'none'; docxContainer.innerHTML = ''; }
+  if (docxContainer) {
+    docxContainer.style.display = 'none';
+    // Clear only the wrap's content — don't wipe the container (would remove #docx-pages-wrap and #docx-zoom-bar)
+    const wrap = document.getElementById('docx-pages-wrap');
+    if (wrap) wrap.innerHTML = '';
+  }
   fileInput.value = '';
 }
 function showOverlay(msg) {
