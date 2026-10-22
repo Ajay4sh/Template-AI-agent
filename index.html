@@ -602,6 +602,7 @@ const state = {
   fileName: '',
   rawHtml: '',          // Injection-target HTML (table-based for PDFs, mammoth for DOCX)
   previewHtml: '',      // Canvas-image HTML for PDF visual preview (empty for DOCX)
+  pdfPages: [],         // [{imageBase64, mediaType}] — one entry per PDF page for AI vision detection
   injectedHtml: '',     // HTML after field injection
   proposedFields: [],
   lastDetectionMode: '',
@@ -968,17 +969,20 @@ async function convertPdf(file) {
   let allItems      = [];   // text items for injection HTML
   let pageWidth     = 612;  // will be updated per page
   let totalChars    = 0;
+  state.pdfPages    = [];   // reset page images
 
   for (let p = 1; p <= pdf.numPages; p++) {
     const page   = await pdf.getPage(p);
 
-    // ── Canvas render → preview ──
+    // ── Canvas render → preview + save page image for AI vision ──
     const vpR    = page.getViewport({ scale: RENDER_SCALE });
     const canvas = document.createElement('canvas');
     canvas.width  = Math.round(vpR.width);
     canvas.height = Math.round(vpR.height);
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: vpR }).promise;
-    const imgSrc = canvas.toDataURL('image/jpeg', 0.88);
+    const imgSrc    = canvas.toDataURL('image/jpeg', 0.88);
+    const imgBase64 = imgSrc.replace(/^data:image\/jpeg;base64,/, '');
+    state.pdfPages.push({ imageBase64: imgBase64, mediaType: 'image/jpeg' });
     const pbPct  = (vpR.height / vpR.width * 100).toFixed(3);
     previewHtml += `<div class="pdf-page" data-page="${p}" style="position:relative;width:100%;padding-bottom:${pbPct}%;margin:0 0 16px;overflow:hidden;">`;
     previewHtml += `<img src="${imgSrc}" style="position:absolute;inset:0;width:100%;height:100%;display:block;" alt="Page ${p}">`;
@@ -1501,23 +1505,56 @@ async function runDetection() {
     let usedAI = false;
 
     if (canUseServer() && aiToggleEnabled()) {
-      showOverlay('Sending to Claude AI for field detection…');
-      const res = await fetch('/api/detect-fields', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html: state.rawHtml }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        updateAiToggleUI(false);
-        hideOverlay();
-        document.getElementById('btn-detect').disabled = false;
-        showAiError(data.error || `Server error ${res.status}`);
-        return;
+      // PDFs: use per-page image detection (vision) — text extraction misses blank boxes
+      // DOCX/HTML: use text-based detection
+      if (state.pdfPages && state.pdfPages.length) {
+        fields = [];
+        const pageCount = state.pdfPages.length;
+        const continuityContext = [];
+        for (let pi = 0; pi < pageCount; pi++) {
+          showOverlay(`Detecting fields: page ${pi + 1} of ${pageCount}…`);
+          const pg = state.pdfPages[pi];
+          const res = await fetch('/api/detect-page', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: pg.imageBase64,
+              mediaType: pg.mediaType,
+              pageIndex: pi,
+              pageCount,
+              documentType: 'Bank account opening form',
+              continuityContext,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            updateAiToggleUI(false);
+            hideOverlay();
+            document.getElementById('btn-detect').disabled = false;
+            showAiError(data.error || `Server error ${res.status}`);
+            return;
+          }
+          const pageFields = data.fields || [];
+          fields.push(...pageFields);
+          pageFields.forEach(f => { if (f.fieldName) continuityContext.push(f.fieldName); });
+        }
+      } else {
+        showOverlay('Sending to Claude AI for field detection…');
+        const res = await fetch('/api/detect-fields', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ html: state.rawHtml }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          updateAiToggleUI(false);
+          hideOverlay();
+          document.getElementById('btn-detect').disabled = false;
+          showAiError(data.error || `Server error ${res.status}`);
+          return;
+        }
+        fields = data.fields || [];
       }
-
-      fields = data.fields || [];
       usedAI = true;
       updateAiToggleUI(true);
     } else {
@@ -2550,7 +2587,7 @@ function resetToUpload() {
   document.getElementById('btn-export').disabled = true;
   document.getElementById('failed-banner').style.display = 'none';
   document.getElementById('filename-chip').textContent = 'No file';
-  Object.assign(state, { fileName: '', rawHtml: '', previewHtml: '', injectedHtml: '', proposedFields: [], fieldValues: {}, reviewStates: [] });
+  Object.assign(state, { fileName: '', rawHtml: '', previewHtml: '', pdfPages: [], injectedHtml: '', proposedFields: [], fieldValues: {}, reviewStates: [] });
   fileInput.value = '';
 }
 function showOverlay(msg) {
@@ -2788,8 +2825,14 @@ async function runDetectionFromModal() {
   const cb = document.getElementById('ai-toggle-cb');
   if (_detectMode === 'ai' && canUseServer()) {
     if (cb) cb.checked = true;
-    // pageSelector.open() will split sections; if none it runs detection directly
-    pageSelector.open();
+    // PDFs: use per-page image detection — skip section selector
+    if (state.pdfPages && state.pdfPages.length) {
+      document.getElementById('btn-detect').disabled = true;
+      runDetection();
+    } else {
+      // DOCX: use section selector for context options
+      pageSelector.open();
+    }
   } else {
     if (cb) cb.checked = false;
     document.getElementById('btn-detect').disabled = true;
