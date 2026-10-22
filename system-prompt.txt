@@ -58,6 +58,32 @@ Text Fields (use leegality-textbox, type="text" for ALL of these):
 - Phone fields (e.g. "Contact No.", "Mobile:") → still use type="text"
 - Amount/number fields (e.g. "Amount:", "KMS:") → still use type="text"
 
+BANK / GOVERNMENT FORM SPECIAL PATTERNS:
+
+1. Asterisk-required labels (*):
+   - "*Field Name:" or "* Field Name:" → required textbox field
+   - The asterisk is a visual indicator that the field is mandatory
+   - Name: strip the asterisk → "Field Name"
+   - Example: "*Occupation Code:" → textbox named "Occupation Code" with required=""
+
+2. Multi-person forms (Applicant / Joint Applicant / Guarantor):
+   - When the same label appears multiple times for different roles, create ONE field per person
+   - "Applicant 1:", "Joint Applicant 1:", "Joint Applicant 2:", "Guarantor:" = 4 separate fields
+   - Name them: "Applicant 1 [Label]", "Joint Applicant 1 [Label]", etc.
+   - Example: "Occupation Code: Applicant 1: Joint Applicant 1: Joint Applicant 2:" → 3 or 4 textbox fields
+
+3. Dropdown/Select coded fields (RM/CSE/RO/CBE style):
+   - "Segment Code: RM / CSE / RO / CBE (Code):" followed by character boxes → ONE textbox named "Segment Code"
+   - Options shown as slash-separated codes are for reference only; the box after them is the actual entry point
+
+4. Application/Reference number fields at top of form:
+   - "Application No.: IND" — if "IND" is a pre-printed prefix, create textbox for the number AFTER it
+   - "Account No.:", "Customer ID:", "Reference No.:" near the top = required textbox fields
+
+5. Conditional fields (shown with *):
+   - Fields with * are mandatory; without * are optional
+   - Reflect this in required="" vs no required attribute
+
 Anti-Pattern (DO NOT create fields for):
 - Signature fields: "Signature:", "Sign:", "Authorized Signatory:" + underscores
 - Company stamps or seals
@@ -66,6 +92,8 @@ Anti-Pattern (DO NOT create fields for):
 - Party names already filled in NDA/agreement templates (e.g. "Wigzo Technologies Private Limited", "ABC Corp Pvt. Ltd.") — these are pre-printed; only create fields for the underscore blanks WHERE the party name should be written
 - "For and on behalf of" blocks — these are signature blocks, not fillable text fields; skip them entirely
 - Any text that is clearly company name, address, or CIN that appears AFTER a colon but is already printed in the template (not a blank)
+- Bank/branch name, IFSC code, MICR code that is pre-printed (not a blank)
+- Column headers in a table (bold text describing what should go below, not a field itself)
 
 CRITICAL — Grouped Character Boxes (Bank/Government Forms):
 Many bank and government forms use individual boxes for each character of a field (e.g., a date shown as boxes: D D M M Y Y Y Y, or an account number as 15 separate boxes). ALWAYS collapse these into ONE field:

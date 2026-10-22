@@ -116,16 +116,34 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 #doc-viewer { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); position: relative; }
 #doc-frame { flex: 1; border: none; background: white; }
 #docx-preview-container {
-  flex: 1; overflow: auto; background: #525659; display: none; padding: 16px;
+  flex: 1; overflow: auto; background: #525659; display: none; padding: 16px 0 16px;
+  position: relative;
 }
-#docx-preview-container .docx-wrapper {
-  background: transparent;
-  display: flex; flex-direction: column; align-items: center;
+/* Zoom toolbar over the docx preview */
+#docx-zoom-bar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
+  padding: 5px 12px; margin-bottom: 10px;
 }
-#docx-preview-container .docx-wrapper section.docx {
-  box-shadow: 0 4px 12px rgba(0,0,0,.4);
-  margin-bottom: 16px;
-  background: white;
+#docx-zoom-bar button {
+  background: #334155; color: #e2e8f0; border: none; border-radius: 4px;
+  width: 26px; height: 26px; font-size: 16px; cursor: pointer; line-height: 1;
+}
+#docx-zoom-bar button:hover { background: #475569; }
+#docx-zoom-label { color: #e2e8f0; font-size: 12px; min-width: 38px; text-align: center; }
+#docx-zoom-bar .zoom-fit-btn { width: auto; padding: 0 8px; font-size: 12px; }
+#docx-pages-wrap {
+  width: 100%;
+}
+/* docx-preview renders its own wrapper div — let it handle layout, just override colors */
+#docx-pages-wrap .docx-preview-wrapper {
+  background: transparent !important;
+  padding: 0 !important;
+}
+#docx-pages-wrap section.docx-preview {
+  transform-origin: top center;
+  transition: transform .15s;
 }
 
 #failed-banner {
@@ -458,7 +476,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <!-- DOCUMENT VIEWER -->
     <div id="doc-viewer">
       <iframe id="doc-frame" title="Document preview"></iframe>
-      <div id="docx-preview-container"></div>
+      <div id="docx-preview-container">
+        <div id="docx-zoom-bar">
+          <button onclick="docxZoom(-10)">−</button>
+          <span id="docx-zoom-label">100%</span>
+          <button onclick="docxZoom(+10)">+</button>
+          <button class="zoom-fit-btn" onclick="docxZoomFit()">Fit</button>
+        </div>
+        <div id="docx-pages-wrap"></div>
+      </div>
 
       <!-- Failed injection banner -->
       <div id="failed-banner">
@@ -745,6 +771,8 @@ async function convertDocxFromBuffer(ab) {
       "p[style-name='BodyText']        => p.body-text:fresh",
       "p[style-name='Body Text 2']     => p.body-text:fresh",
       "p[style-name='Body Text Indent']=> p.body-text:fresh",
+      "p[style-id='BodyText']          => p.body-text:fresh",
+      "p[style-id='BodyText2']         => p.body-text:fresh",
 
       // ── List styles: let mammoth handle natively ─────────────
       // DO NOT override List Paragraph / List Bullet / List Number here.
@@ -754,6 +782,34 @@ async function convertDocxFromBuffer(ab) {
 
       // ── Table paragraph ───────────────────────────────────────
       "p[style-name='Table Paragraph'] => p.table-para:fresh",
+      "p[style-name='Table Contents']  => p.table-para:fresh",
+      "p[style-name='Table Text']      => p.table-para:fresh",
+      "p[style-id='TableParagraph']    => p.table-para:fresh",
+      "p[style-id='TableGrid']         => p.table-para:fresh",
+      // List Paragraph — let mammoth handle list nesting natively, just map the style ID
+      "p[style-id='ListParagraph']     => p.list-para:fresh",
+
+      // ── Bank/Government form styles ───────────────────────────
+      "p[style-name='Normal (Web)']    => p:fresh",
+      "p[style-name='Normal Indent']   => p:fresh",
+      "p[style-name='No Spacing']      => p:fresh",
+      "p[style-name='Note']            => p.note:fresh",
+      "p[style-name='Caption']         => p.caption:fresh",
+      "p[style-name='Header']          => p.doc-header:fresh",
+      "p[style-name='Footer']          => p.doc-footer:fresh",
+      "p[style-name='footnote text']   => p.footnote:fresh",
+      "p[style-name='endnote text']    => p.footnote:fresh",
+
+      // ── Common DCB / HDFC / SBI / Axis bank form styles ───────
+      "p[style-name='MsoNormal']       => p:fresh",
+      "p[style-name='msonormal']       => p:fresh",
+      "p[style-name='Default']         => p:fresh",
+      "p[style-name='Para']            => p:fresh",
+      "p[style-name='para']            => p:fresh",
+      "p[style-name='TEXT']            => p:fresh",
+
+      // ── Catch-all: any unrecognised paragraph style → plain <p> ─
+      "p                               => p:fresh",
 
       // ── Character styles ──────────────────────────────────────
       "b        => strong",
@@ -786,21 +842,56 @@ async function convertDocxFromBuffer(ab) {
   return html;
 }
 
+// ── DOCX preview zoom state ───────────────────────────────────────────────
+let _docxZoomPct = 100;
+
+function docxZoom(delta) {
+  _docxZoomPct = Math.max(30, Math.min(200, _docxZoomPct + delta));
+  _applyDocxZoom();
+}
+
+function docxZoomFit() {
+  const wrap = document.getElementById('docx-pages-wrap');
+  const section = wrap && wrap.querySelector('section.docx-preview');
+  const pane = document.getElementById('docx-preview-container');
+  if (section && pane) {
+    const pageW = section.offsetWidth || 816;
+    const paneW = pane.clientWidth - 32;
+    _docxZoomPct = Math.max(30, Math.min(200, Math.floor(paneW / pageW * 100)));
+  } else {
+    _docxZoomPct = 100;
+  }
+  _applyDocxZoom();
+}
+
+function _applyDocxZoom() {
+  const scale = _docxZoomPct / 100;
+  document.getElementById('docx-zoom-label').textContent = _docxZoomPct + '%';
+  document.querySelectorAll('#docx-pages-wrap section.docx-preview').forEach(s => {
+    s.style.transform = `scale(${scale})`;
+    const h = (s.offsetHeight || 1056);
+    s.style.marginBottom = `${(h * scale) - h + 8}px`;
+  });
+}
+
 // Render DOCX visually using docx-preview (pixel-perfect layout, like Word)
 async function showDocxPreview(arrayBuffer) {
   const frame = document.getElementById('doc-frame');
   const container = document.getElementById('docx-preview-container');
+  const wrap = document.getElementById('docx-pages-wrap');
   frame.style.display = 'none';
   container.style.display = 'flex';
-  container.innerHTML = '<div style="margin:auto;padding:20px;color:#666;font-size:14px;">Rendering document…</div>';
+  container.style.flexDirection = 'column';
+  wrap.innerHTML = '<div style="margin:auto;padding:20px;color:#ccc;font-size:13px;">Rendering document…</div>';
 
   try {
     const docxLib = window.docx;
     if (!docxLib || !docxLib.renderAsync) throw new Error('docx-preview library not loaded');
 
+    wrap.innerHTML = '';
     // renderAsync needs a fresh copy of the buffer (it reads it as a stream)
     const bufCopy = arrayBuffer.slice(0);
-    await docxLib.renderAsync(bufCopy, container, null, {
+    await docxLib.renderAsync(bufCopy, wrap, null, {
       className: 'docx-preview',
       inWrapper: true,
       ignoreWidth: false,
@@ -810,6 +901,9 @@ async function showDocxPreview(arrayBuffer) {
       renderFooters: true,
       renderFootnotes: true,
     });
+
+    // Auto-fit to pane width after rendering
+    setTimeout(docxZoomFit, 100);
   } catch (e) {
     console.warn('docx-preview failed, falling back to mammoth HTML:', e);
     container.style.display = 'none';
